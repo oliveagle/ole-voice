@@ -37,8 +37,8 @@ class GlobalHotkeyManager {
         self.toggleCallback = toggleCallback
         self.cancelCallback = cancelCallback
 
-        // 监听 flagsChanged (修饰键) 和 keyDown (ESC 键)
-        let eventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
+        // 只监听 flagsChanged (修饰键)，不再监听 ESC 键
+        let eventMask = (1 << CGEventType.flagsChanged.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -852,7 +852,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("✓ VoiceOverlay 已启动")
         if hotkeyRegistered {
             print("  按右 Command 开始/停止录音")
-            print("  录音时按 ESC 取消")
+            print("  再次按右 Command 停止或取消")
         } else {
             print("  ⚠️ 快捷键注册失败，请授予辅助功能权限")
             print("     系统设置 -> 隐私与安全性 -> 辅助功能")

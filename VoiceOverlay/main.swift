@@ -183,7 +183,9 @@ class VoiceOverlayWindow: NSWindow {
     }
 
     func showWindow() {
-        self.makeKeyAndOrderFront(nil)
+        // 使用 orderFrontRegardless 而不是 makeKeyAndOrderFront
+        // 这样窗口显示但不会抢夺焦点
+        self.orderFrontRegardless()
         waveView?.startAnimation()
     }
 
@@ -993,72 +995,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // 剪贴板备份
-    private var clipboardBackup: [NSPasteboardItem] = []
+    // 保存剪贴板所有内容类型
+    private var savedClipboardData: [(type: NSPasteboard.PasteboardType, data: Data)]?
 
-    func saveClipboard() {
+    func pasteText(_ text: String) {
         let pasteboard = NSPasteboard.general
-        clipboardBackup = []
 
-        // 保存所有剪贴板项
-        if let items = pasteboard.pasteboardItems {
-            for item in items {
-                let newItem = NSPasteboardItem()
-                for type in item.types {
-                    if let data = item.data(forType: type) {
-                        newItem.setData(data, forType: type)
-                    }
+        // 1. 保存当前剪贴板所有内容（支持文字、图片、富文本等）
+        savedClipboardData = []
+        if let items = pasteboard.pasteboardItems, let firstItem = items.first {
+            for type in firstItem.types {
+                if let data = firstItem.data(forType: type) {
+                    savedClipboardData?.append((type: type, data: data))
                 }
-                clipboardBackup.append(newItem)
             }
         }
 
-        print("[Clipboard] 已保存 \(clipboardBackup.count) 项")
-    }
-
-    func restoreClipboard() {
-        guard !clipboardBackup.isEmpty else {
-            print("[Clipboard] 无需恢复")
-            return
-        }
-
-        let pasteboard = NSPasteboard.general
+        // 2. 设置新文字到剪贴板
         pasteboard.clearContents()
+        pasteboard.declareTypes([.string], owner: nil)
+        pasteboard.setString(text, forType: .string)
 
-        let success = pasteboard.writeObjects(clipboardBackup)
-        print("[Clipboard] 恢复\(success ? "成功" : "失败")")
-
-        clipboardBackup = []
-    }
-
-    func pasteText(_ text: String) {
-        print("[Paste] 准备输入: \"\(text)\"")
-
-        let pasteboard = NSPasteboard.general
-
-        // 保存完整剪贴板内容
-        saveClipboard()
-
-        // 复制到剪贴板
-        pasteboard.clearContents()
-        let copied = pasteboard.setString(text, forType: .string)
-        print("[Paste] 复制到剪贴板: \(copied ? "成功" : "失败")")
-
-        // 模拟 Command+V 粘贴
+        // 3. 发送 Command+V 粘贴
         let source = CGEventSource(stateID: .combinedSessionState)
         let vDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
         let vUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
-
         vDown?.flags = .maskCommand
         vUp?.flags = .maskCommand
-
         vDown?.post(tap: .cghidEventTap)
         vUp?.post(tap: .cghidEventTap)
-        print("[Paste] 已发送 Command+V")
 
-        // 延迟恢复剪贴板（给粘贴操作足够时间）
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.restoreClipboard()
+        // 4. 延迟恢复原始剪贴板内容（0.5秒足够粘贴完成）
+        let savedData = savedClipboardData
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            pasteboard.clearContents()
+            if let data = savedData, !data.isEmpty {
+                let item = NSPasteboardItem()
+                for (type, d) in data {
+                    item.setData(d, forType: type)
+                }
+                pasteboard.writeObjects([item])
+            }
         }
     }
 

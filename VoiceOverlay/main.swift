@@ -594,6 +594,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "开始录音", action: #selector(startRecording), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "停止录音", action: #selector(stopRecording), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
+
+        // 模型选择子菜单
+        let modelMenu = NSMenu(title: "模型选择")
+        let model0_6B = NSMenuItem(title: "0.6B - 快速", action: #selector(selectModel0_6B), keyEquivalent: "")
+        let model1_7B = NSMenuItem(title: "1.7B - 高精度", action: #selector(selectModel1_7B), keyEquivalent: "")
+        model0_6B.state = getCurrentModel() == "0.6B" ? .on : .off
+        model1_7B.state = getCurrentModel() == "1.7B" ? .on : .off
+        model0_6B.target = self
+        model1_7B.target = self
+        modelMenu.addItem(model0_6B)
+        modelMenu.addItem(model1_7B)
+        let modelItem = NSMenuItem(title: "模型选择", action: nil, keyEquivalent: "")
+        modelItem.submenu = modelMenu
+        menu.addItem(modelItem)
+
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
 
@@ -818,6 +834,69 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func quit() {
         stopASRServer()
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - 模型切换
+    func getCurrentModel() -> String {
+        let configPath = NSHomeDirectory() + "/ole/repos/github.com/oliveagle/ole_asr/config.yaml"
+        guard let content = try? String(contentsOfFile: configPath, encoding: .utf8) else {
+            return "0.6B"
+        }
+        // 简单解析 YAML 找 model 字段
+        if let match = content.range(of: "model:\\s*\\\"?([^\\\"\\n]+)\\\"?", options: .regularExpression) {
+            let line = String(content[match])
+            if line.contains("1.7B") {
+                return "1.7B"
+            }
+        }
+        return "0.6B"
+    }
+
+    func setModel(_ model: String) {
+        let configPath = NSHomeDirectory() + "/ole/repos/github.com/oliveagle/ole_asr/config.yaml"
+        guard var content = try? String(contentsOfFile: configPath, encoding: .utf8) else { return }
+
+        // 替换 model 字段
+        if let range = content.range(of: "(asr:|model:)\\s*\\\"?[^\\\"\\n]*\\\"?", options: .regularExpression) {
+            let oldLine = String(content[range])
+            let newLine = oldLine.contains("asr:") ? "asr:\\n  model: \"\(model)\"" : "model: \"\(model)\""
+            content = content.replacingOccurrences(of: oldLine, with: newLine)
+            try? content.write(toFile: configPath, atomically: true, encoding: .utf8)
+        }
+
+        // 更新菜单状态
+        if let menu = statusItem.menu {
+            for item in menu.items {
+                if item.title == "模型选择", let submenu = item.submenu {
+                    for subItem in submenu.items {
+                        if subItem.title.contains("0.6B") {
+                            subItem.state = model == "0.6B" ? .on : .off
+                        } else if subItem.title.contains("1.7B") {
+                            subItem.state = model == "1.7B" ? .on : .off
+                        }
+                    }
+                }
+            }
+        }
+
+        // 重启 ASR 服务
+        restartASRServer()
+    }
+
+    @objc func selectModel0_6B() {
+        setModel("0.6B")
+    }
+
+    @objc func selectModel1_7B() {
+        setModel("1.7B")
+    }
+
+    func restartASRServer() {
+        print("[ASR] 重启服务以应用新模型...")
+        stopASRServer()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.startASRServer()
+        }
     }
 }
 

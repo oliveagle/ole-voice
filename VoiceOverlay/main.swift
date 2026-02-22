@@ -116,10 +116,10 @@ class VoiceOverlayWindow: NSWindow {
     }
 
     func setupUI() {
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 44))
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 140, height: 44))
 
         // 毛玻璃效果背景
-        let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 180, height: 44))
+        let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 140, height: 44))
         visualEffectView.material = .hudWindow
         visualEffectView.state = .active
         visualEffectView.blendingMode = .behindWindow
@@ -128,27 +128,27 @@ class VoiceOverlayWindow: NSWindow {
         visualEffectView.layer?.masksToBounds = true
 
         // 深色半透明覆盖层
-        let darkOverlay = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 44))
+        let darkOverlay = NSView(frame: NSRect(x: 0, y: 0, width: 140, height: 44))
         darkOverlay.wantsLayer = true
         darkOverlay.layer?.backgroundColor = NSColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 0.85).cgColor
         darkOverlay.layer?.cornerRadius = 22
 
         // 精致的发光边框
-        let borderView = NSView(frame: NSRect(x: 0.5, y: 0.5, width: 179, height: 43))
+        let borderView = NSView(frame: NSRect(x: 0.5, y: 0.5, width: 139, height: 43))
         borderView.wantsLayer = true
         borderView.layer?.cornerRadius = 21.5
         borderView.layer?.borderWidth = 0.8
         borderView.layer?.borderColor = NSColor(red: 0.35, green: 0.35, blue: 0.4, alpha: 0.5).cgColor
 
         // 内部高光边框
-        let innerBorder = NSView(frame: NSRect(x: 1.5, y: 1.5, width: 177, height: 41))
+        let innerBorder = NSView(frame: NSRect(x: 1.5, y: 1.5, width: 137, height: 41))
         innerBorder.wantsLayer = true
         innerBorder.layer?.cornerRadius = 20.5
         innerBorder.layer?.borderWidth = 0.5
         innerBorder.layer?.borderColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.06).cgColor
 
         // 文字标签 - 使用更细的字体
-        let label = NSTextField(frame: NSRect(x: 14, y: 12, width: 68, height: 20))
+        let label = NSTextField(frame: NSRect(x: 14, y: 10, width: 52, height: 20))
         label.stringValue = "语音输入"
         label.textColor = NSColor(red: 0.95, green: 0.95, blue: 0.97, alpha: 1.0)
         // 使用更细的系统字体
@@ -163,18 +163,12 @@ class VoiceOverlayWindow: NSWindow {
         label.alignment = .left
 
         // 精致的分隔线 - 渐变效果
-        let separator = NSView(frame: NSRect(x: 86, y: 10, width: 1, height: 24))
+        let separator = NSView(frame: NSRect(x: 78, y: 10, width: 1, height: 24))
         separator.wantsLayer = true
         separator.layer?.backgroundColor = NSColor(red: 0.4, green: 0.4, blue: 0.45, alpha: 0.35).cgColor
 
-        // 录音状态指示器
-        let indicator = NSView(frame: NSRect(x: 80, y: 20, width: 3, height: 3))
-        indicator.wantsLayer = true
-        indicator.layer?.backgroundColor = NSColor(red: 1.0, green: 0.3, blue: 0.3, alpha: 1.0).cgColor
-        indicator.layer?.cornerRadius = 1.5
-
         // 音波视图
-        waveView = WaveView(frame: NSRect(x: 92, y: 0, width: 80, height: 44))
+        waveView = WaveView(frame: NSRect(x: 79, y: 0, width: 56, height: 44))
 
         // 组装视图层次
         containerView.addSubview(visualEffectView)
@@ -183,7 +177,6 @@ class VoiceOverlayWindow: NSWindow {
         containerView.addSubview(innerBorder)
         containerView.addSubview(label)
         containerView.addSubview(separator)
-        containerView.addSubview(indicator)
         containerView.addSubview(waveView)
 
         self.contentView = containerView
@@ -202,20 +195,18 @@ class VoiceOverlayWindow: NSWindow {
 
 // MARK: - 音波动画视图
 class WaveView: NSView {
-    private var bars: [CGFloat] = Array(repeating: 0.3, count: 7)
-    private var targetBars: [CGFloat] = Array(repeating: 0.3, count: 7)
+    private var bars: [CGFloat] = Array(repeating: 0.3, count: 5)
+    private var targetBars: [CGFloat] = Array(repeating: 0.3, count: 5)
     private var isAnimating = false
     private var animationTimer: Timer?
 
     // 渐变色定义 (青色到蓝色)
     private let gradientColors = [
         NSColor(red: 0.0, green: 0.9, blue: 0.6, alpha: 1.0),   // 青绿
-        NSColor(red: 0.0, green: 0.85, blue: 0.75, alpha: 1.0), // 青蓝
-        NSColor(red: 0.0, green: 0.75, blue: 0.9, alpha: 1.0),  // 浅蓝
-        NSColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0),   // 蓝色
-        NSColor(red: 0.4, green: 0.5, blue: 1.0, alpha: 1.0),   // 紫蓝
-        NSColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0),
-        NSColor(red: 0.0, green: 0.75, blue: 0.9, alpha: 1.0)
+        NSColor(red: 0.0, green: 0.8, blue: 0.85, alpha: 1.0),  // 青蓝
+        NSColor(red: 0.1, green: 0.65, blue: 1.0, alpha: 1.0),  // 蓝色
+        NSColor(red: 0.3, green: 0.55, blue: 1.0, alpha: 1.0),  // 紫蓝
+        NSColor(red: 0.1, green: 0.65, blue: 1.0, alpha: 1.0)   // 蓝色
     ]
 
     override func draw(_ dirtyRect: NSRect) {
@@ -264,7 +255,7 @@ class WaveView: NSView {
         animationTimer?.invalidate()
         animationTimer = nil
         // 重置为平静状态
-        bars = Array(repeating: 0.3, count: 7)
+        bars = Array(repeating: 0.3, count: 5)
         needsDisplay = true
     }
 
@@ -580,7 +571,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // 创建悬浮窗
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
-        let windowWidth: CGFloat = 180
+        let windowWidth: CGFloat = 140
         let windowHeight: CGFloat = 44
         let x = (screenFrame.width - windowWidth) / 2
         let y: CGFloat = 100

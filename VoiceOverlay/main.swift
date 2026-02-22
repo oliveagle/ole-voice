@@ -148,7 +148,7 @@ class VoiceOverlayWindow: NSWindow {
         innerBorder.layer?.borderColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.06).cgColor
 
         // 文字标签 - 使用更细的字体
-        let label = NSTextField(frame: NSRect(x: 14, y: 10, width: 68, height: 24))
+        let label = NSTextField(frame: NSRect(x: 14, y: 0, width: 68, height: 44))
         label.stringValue = "语音输入"
         label.textColor = NSColor(red: 0.95, green: 0.95, blue: 0.97, alpha: 1.0)
         // 使用更细的系统字体

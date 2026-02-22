@@ -993,12 +993,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // 剪贴板备份
+    private var clipboardBackup: [NSPasteboardItem] = []
+
+    func saveClipboard() {
+        let pasteboard = NSPasteboard.general
+        clipboardBackup = []
+
+        // 保存所有剪贴板项
+        if let items = pasteboard.pasteboardItems {
+            for item in items {
+                let newItem = NSPasteboardItem()
+                for type in item.types {
+                    if let data = item.data(forType: type) {
+                        newItem.setData(data, forType: type)
+                    }
+                }
+                clipboardBackup.append(newItem)
+            }
+        }
+
+        print("[Clipboard] 已保存 \(clipboardBackup.count) 项")
+    }
+
+    func restoreClipboard() {
+        guard !clipboardBackup.isEmpty else {
+            print("[Clipboard] 无需恢复")
+            return
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+
+        let success = pasteboard.writeObjects(clipboardBackup)
+        print("[Clipboard] 恢复\(success ? "成功" : "失败")")
+
+        clipboardBackup = []
+    }
+
     func pasteText(_ text: String) {
         print("[Paste] 准备输入: \"\(text)\"")
 
-        // 保存当前剪贴板内容
         let pasteboard = NSPasteboard.general
-        let oldContents = pasteboard.string(forType: .string)
+
+        // 保存完整剪贴板内容
+        saveClipboard()
 
         // 复制到剪贴板
         pasteboard.clearContents()
@@ -1017,13 +1056,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         vUp?.post(tap: .cghidEventTap)
         print("[Paste] 已发送 Command+V")
 
-        // 延迟恢复剪贴板
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            pasteboard.clearContents()
-            if let oldText = oldContents {
-                pasteboard.setString(oldText, forType: .string)
-                print("[Paste] 剪贴板已恢复")
-            }
+        // 延迟恢复剪贴板（给粘贴操作足够时间）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.restoreClipboard()
         }
     }
 

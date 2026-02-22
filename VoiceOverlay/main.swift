@@ -529,6 +529,38 @@ class Socket {
     }
 }
 
+// MARK: - 单实例锁
+class SingleInstanceLock {
+    static let shared = SingleInstanceLock()
+    private let lockPath = "/tmp/voiceoverlay.lock"
+    private var lockFile: FileHandle?
+
+    func acquire() -> Bool {
+        // 检查是否有其他实例在运行
+        let task = Process()
+        task.launchPath = "/usr/bin/pgrep"
+        task.arguments = ["-f", "VoiceOverlay"]
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.launch()
+        task.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        if let output = String(data: data, encoding: .utf8) {
+            let pids = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: "\n")
+                .filter { !$0.isEmpty }
+            // 如果找到超过1个进程（包括自己），说明已有实例在运行
+            if pids.count > 1 {
+                print("VoiceOverlay 已在运行中 (PID: \(pids[0]))")
+                return false
+            }
+        }
+        return true
+    }
+}
+
 // MARK: - 应用代理
 class AppDelegate: NSObject, NSApplicationDelegate {
     var window: VoiceOverlayWindow!
@@ -539,6 +571,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var asrMonitorTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 单实例检查
+        if !SingleInstanceLock.shared.acquire() {
+            NSApplication.shared.terminate(nil)
+            return
+        }
         // 创建悬浮窗
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
         let windowWidth: CGFloat = 180

@@ -100,12 +100,23 @@ def transcribe_audio(audio_path: str) -> dict:
         mlx_lang = lang_map.get(CONFIG['language'], 'Chinese')
 
         print(f"[ASR] 开始转录 (模型: {model_key}, 语言: {mlx_lang})...")
+
+        # 创建临时输出文件路径
+        output_path = tempfile.NamedTemporaryFile(suffix='.txt', delete=False).name
+
         result = generate_transcription(
             model=model,
             audio=audio_path,
+            output_path=output_path,
             language=mlx_lang,
             verbose=False
         )
+
+        # 清理临时输出文件
+        try:
+            os.unlink(output_path)
+        except:
+            pass
 
         text = result.text.strip() if hasattr(result, 'text') else str(result).strip()
         return {"success": True, "text": text}

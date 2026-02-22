@@ -660,7 +660,7 @@ class SingleInstanceLock {
 
                     let data = pipe.fileHandleForReading.readDataToEndOfFile()
                     if let output = String(data: data, encoding: .utf8),
-                       output.contains("VoiceOverlay") && !output.contains("asr_server") {
+                       (output.contains("VoiceOverlay") || output.contains("VoiceInput")) && !output.contains("asr_server") {
                         print("VoiceOverlay 已在运行中 (PID: \(pid))")
                         return false
                     }
@@ -689,22 +689,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var asrMonitorTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 重定向 stdout/stderr 到日志文件
+        let logPath = "/tmp/voiceoverlay_debug.log"
+        freopen(logPath.cString(using: .utf8), "w", stdout)
+        freopen(logPath.cString(using: .utf8), "w", stderr)
+        setbuf(stdout, nil)
+
+        print("[DEBUG] 应用启动")
+
         // 单实例检查
         if !SingleInstanceLock.shared.acquire() {
+            print("[DEBUG] 单实例检查失败，退出")
             NSApplication.shared.terminate(nil)
             return
         }
+        print("[DEBUG] 单实例检查通过")
 
         // 显示启动画面
         showSplashScreen()
     }
 
+    // 获取鼠标所在的屏幕
+    func getScreenWithMouse() -> NSScreen? {
+        let mouseLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) }
+    }
+
     func showSplashScreen() {
-        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        // 启动画面固定在内置主屏幕
+        let targetScreen = NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.main
+        let screenFrame = targetScreen?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        print("[DEBUG] 选中屏幕 frame: \(screenFrame), 所有屏幕: \(NSScreen.screens.map { $0.frame })")
+
         let splashWidth: CGFloat = 280
         let splashHeight: CGFloat = 200
-        let x = (screenFrame.width - splashWidth) / 2
-        let y = (screenFrame.height - splashHeight) / 2
+        // 考虑多显示器环境，需要加上屏幕原点的偏移
+        let x = screenFrame.origin.x + (screenFrame.width - splashWidth) / 2
+        let y = screenFrame.origin.y + (screenFrame.height - splashHeight) / 2
+        print("[DEBUG] 启动画面位置: x=\(x), y=\(y)")
 
         splashWindow = SplashWindow(
             contentRect: NSRect(x: x, y: y, width: splashWidth, height: splashHeight),
@@ -714,6 +736,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         splashWindow.makeKeyAndOrderFront(nil)
+        print("[DEBUG] 启动画面已显示")
 
         // 2秒后淡出并初始化主应用
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
@@ -724,11 +747,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func initializeMainApp() {
-        // 创建悬浮窗
-        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        // 创建悬浮窗 - 同样优先使用内置主屏幕
+        let targetScreen = NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.main
+        let screenFrame = targetScreen?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
         let windowWidth: CGFloat = 140
         let windowHeight: CGFloat = 44
-        let x = (screenFrame.width - windowWidth) / 2
+        // 考虑多显示器环境，需要加上屏幕原点的 x 偏移
+        let x = screenFrame.origin.x + (screenFrame.width - windowWidth) / 2
         let y: CGFloat = 100
 
         window = VoiceOverlayWindow(
@@ -985,6 +1010,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func startRecording() {
         guard !isRecording else { return }
+
+        // 获取鼠标所在的屏幕，将悬浮窗定位到该屏幕
+        if let targetScreen = getScreenWithMouse() {
+            let screenFrame = targetScreen.frame
+            let windowWidth: CGFloat = 140
+            let x = screenFrame.origin.x + (screenFrame.width - windowWidth) / 2
+            let y: CGFloat = 100
+
+            // 更新窗口位置
+            window.setFrameOrigin(NSPoint(x: x, y: y))
+        }
 
         isRecording = true
         window.showWindow()

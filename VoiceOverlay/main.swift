@@ -591,27 +591,71 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "开始录音", action: #selector(startRecording), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "停止录音", action: #selector(stopRecording), keyEquivalent: ""))
+
+        // 状态显示
+        let statusItem = NSMenuItem(title: "🎤 语音输入已就绪", action: nil, keyEquivalent: "")
+        statusItem.isEnabled = false
+        menu.addItem(statusItem)
         menu.addItem(NSMenuItem.separator())
 
         // 模型选择子菜单
         let modelMenu = NSMenu(title: "模型选择")
-        let model0_6B = NSMenuItem(title: "0.6B - 快速", action: #selector(selectModel0_6B), keyEquivalent: "")
-        let model1_7B = NSMenuItem(title: "1.7B - 高精度", action: #selector(selectModel1_7B), keyEquivalent: "")
-        model0_6B.state = getCurrentModel() == "0.6B" ? .on : .off
-        model1_7B.state = getCurrentModel() == "1.7B" ? .on : .off
+        modelMenu.autoenablesItems = false
+
+        // 显示当前配置
+        let configInfo = NSMenuItem(title: "📋 当前配置", action: nil, keyEquivalent: "")
+        configInfo.isEnabled = false
+        modelMenu.addItem(configInfo)
+
+        let currentModel = getCurrentModel()
+        let configModel = NSMenuItem(title: "   选中模型: \(currentModel)", action: nil, keyEquivalent: "")
+        configModel.isEnabled = false
+        configModel.tag = 100
+        modelMenu.addItem(configModel)
+
+        let runningModel = getRunningModel()
+        let runModel = NSMenuItem(title: "   运行模型: \(runningModel)", action: nil, keyEquivalent: "")
+        runModel.isEnabled = false
+        runModel.tag = 101
+        modelMenu.addItem(runModel)
+        modelMenu.addItem(NSMenuItem.separator())
+
+        // 模型选项
+        let model0_6B = NSMenuItem(title: "☐ 0.6B - 快速 (适合日常使用)", action: #selector(selectModel0_6B), keyEquivalent: "")
+        let model1_7B = NSMenuItem(title: "☐ 1.7B - 高精度 (适合长文本)", action: #selector(selectModel1_7B), keyEquivalent: "")
+
+        model0_6B.state = currentModel == "0.6B" ? .on : .off
+        model1_7B.state = currentModel == "1.7B" ? .on : .off
+
         model0_6B.target = self
         model1_7B.target = self
+
+        model0_6B.tag = 200
+        model1_7B.tag = 201
+
         modelMenu.addItem(model0_6B)
         modelMenu.addItem(model1_7B)
-        let modelItem = NSMenuItem(title: "模型选择", action: nil, keyEquivalent: "")
+        modelMenu.addItem(NSMenuItem.separator())
+
+        // 重启服务按钮
+        let restartItem = NSMenuItem(title: "🔄 重启 ASR 服务", action: #selector(restartASRServer), keyEquivalent: "")
+        restartItem.target = self
+        modelMenu.addItem(restartItem)
+
+        let modelItem = NSMenuItem(title: "⚙️ 模型设置", action: nil, keyEquivalent: "")
         modelItem.submenu = modelMenu
         menu.addItem(modelItem)
 
         menu.addItem(NSMenuItem.separator())
+
+        // 操作按钮
+        menu.addItem(NSMenuItem(title: "🔴 开始录音", action: #selector(startRecording), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "⏹ 停止录音", action: #selector(stopRecording), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
+
         statusItem.menu = menu
+        self.statusItem.menu = menu
 
         // 初始隐藏悬浮窗
         window.hideWindow()
@@ -837,50 +881,107 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - 模型切换
+    var selectedModel: String = "0.6B"
+
     func getCurrentModel() -> String {
         let configPath = NSHomeDirectory() + "/ole/repos/github.com/oliveagle/ole_asr/config.yaml"
         guard let content = try? String(contentsOfFile: configPath, encoding: .utf8) else {
-            return "0.6B"
+            return selectedModel
         }
         // 简单解析 YAML 找 model 字段
         if let match = content.range(of: "model:\\s*\\\"?([^\\\"\\n]+)\\\"?", options: .regularExpression) {
             let line = String(content[match])
             if line.contains("1.7B") {
+                selectedModel = "1.7B"
                 return "1.7B"
             }
         }
+        selectedModel = "0.6B"
         return "0.6B"
     }
 
+    func getRunningModel() -> String {
+        // 从日志文件读取当前运行的模型
+        let logPath = "/tmp/asr_server.log"
+        guard let content = try? String(contentsOfFile: logPath, encoding: .utf8) else {
+            return "未知"
+        }
+
+        // 查找最新加载的模型
+        let lines = content.components(separatedBy: .newlines)
+        for line in lines.reversed() {
+            if line.contains("加载模型 [") {
+                if line.contains("1.7B") {
+                    return "1.7B"
+                } else if line.contains("0.6B") {
+                    return "0.6B"
+                }
+            }
+            if line.contains("当前模型:"), let range = line.range(of: "当前模型:") {
+                let modelInfo = String(line[range.upperBound...])
+                if modelInfo.contains("1.7B") {
+                    return "1.7B"
+                } else if modelInfo.contains("0.6B") {
+                    return "0.6B"
+                }
+            }
+        }
+        return "未知"
+    }
+
+    func updateMenuState() {
+        guard let menu = statusItem.menu else { return }
+
+        // 更新模型设置子菜单
+        for item in menu.items {
+            if item.title.contains("模型设置"), let submenu = item.submenu {
+                let currentModel = getCurrentModel()
+                let runningModel = getRunningModel()
+
+                for subItem in submenu.items {
+                    switch subItem.tag {
+                    case 100: // 选中模型
+                        subItem.title = "   选中模型: \(currentModel)"
+                    case 101: // 运行模型
+                        subItem.title = "   运行模型: \(runningModel)"
+                        subItem.title = runningModel == currentModel ?
+                            "   运行模型: \(runningModel) ✅" :
+                            "   运行模型: \(runningModel) ⚠️ (需重启)"
+                    case 200: // 0.6B 选项
+                        subItem.state = currentModel == "0.6B" ? .on : .off
+                        subItem.title = subItem.state == .on ?
+                            "✅ 0.6B - 快速 (适合日常使用)" :
+                            "☐ 0.6B - 快速 (适合日常使用)"
+                    case 201: // 1.7B 选项
+                        subItem.state = currentModel == "1.7B" ? .on : .off
+                        subItem.title = subItem.state == .on ?
+                            "✅ 1.7B - 高精度 (适合长文本)" :
+                            "☐ 1.7B - 高精度 (适合长文本)"
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+    }
+
     func setModel(_ model: String) {
+        selectedModel = model
         let configPath = NSHomeDirectory() + "/ole/repos/github.com/oliveagle/ole_asr/config.yaml"
         guard var content = try? String(contentsOfFile: configPath, encoding: .utf8) else { return }
 
-        // 替换 model 字段
-        if let range = content.range(of: "(asr:|model:)\\s*\\\"?[^\\\"\\n]*\\\"?", options: .regularExpression) {
+        // 使用更精确的 YAML 替换
+        if let range = content.range(of: "model:\\s*\\\"?[^\\\"\\n]*\\\"?", options: .regularExpression) {
             let oldLine = String(content[range])
-            let newLine = oldLine.contains("asr:") ? "asr:\\n  model: \"\(model)\"" : "model: \"\(model)\""
+            let newLine = "model: \"\(model)\""
             content = content.replacingOccurrences(of: oldLine, with: newLine)
             try? content.write(toFile: configPath, atomically: true, encoding: .utf8)
         }
 
         // 更新菜单状态
-        if let menu = statusItem.menu {
-            for item in menu.items {
-                if item.title == "模型选择", let submenu = item.submenu {
-                    for subItem in submenu.items {
-                        if subItem.title.contains("0.6B") {
-                            subItem.state = model == "0.6B" ? .on : .off
-                        } else if subItem.title.contains("1.7B") {
-                            subItem.state = model == "1.7B" ? .on : .off
-                        }
-                    }
-                }
-            }
-        }
+        updateMenuState()
 
-        // 重启 ASR 服务
-        restartASRServer()
+        print("[Config] 已切换模型到: \(model)")
     }
 
     @objc func selectModel0_6B() {
@@ -891,11 +992,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setModel("1.7B")
     }
 
-    func restartASRServer() {
+    @objc func restartASRServer() {
         print("[ASR] 重启服务以应用新模型...")
         stopASRServer()
+
+        // 更新菜单显示重启中状态
+        if let menu = statusItem.menu {
+            for item in menu.items {
+                if item.title.contains("模型设置"), let submenu = item.submenu {
+                    for subItem in submenu.items {
+                        if subItem.tag == 101 {
+                            subItem.title = "   运行模型: 重启中..."
+                        }
+                    }
+                }
+            }
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.startASRServer()
+            // 重启完成后更新菜单状态
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                self?.updateMenuState()
+            }
         }
     }
 }

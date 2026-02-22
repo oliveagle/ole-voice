@@ -520,29 +520,138 @@ class Socket {
     }
 }
 
+// MARK: - 启动画面窗口
+class SplashWindow: NSWindow {
+    private var animationView: NSView!
+    private var completionHandler: (() -> Void)?
+
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+
+        self.level = .floating
+        self.isOpaque = false
+        self.backgroundColor = NSColor.clear
+        self.hasShadow = true
+
+        setupUI()
+    }
+
+    func setupUI() {
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 200))
+
+        // 背景
+        let bgView = NSView(frame: containerView.bounds)
+        bgView.wantsLayer = true
+        bgView.layer?.backgroundColor = NSColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 0.95).cgColor
+        bgView.layer?.cornerRadius = 20
+        bgView.layer?.masksToBounds = true
+
+        // 边框
+        let borderView = NSView(frame: NSRect(x: 1, y: 1, width: 278, height: 198))
+        borderView.wantsLayer = true
+        borderView.layer?.cornerRadius = 19
+        borderView.layer?.borderWidth = 1
+        borderView.layer?.borderColor = NSColor(red: 0.3, green: 0.3, blue: 0.35, alpha: 0.6).cgColor
+
+        // 图标背景圆
+        let iconBg = NSView(frame: NSRect(x: 110, y: 90, width: 60, height: 60))
+        iconBg.wantsLayer = true
+        iconBg.layer?.backgroundColor = NSColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 0.3).cgColor
+        iconBg.layer?.cornerRadius = 30
+
+        // 波形图标
+        let waveContainer = NSView(frame: NSRect(x: 125, y: 105, width: 30, height: 30))
+
+        // 3条波形线
+        for i in 0..<3 {
+            let line = NSView(frame: NSRect(x: CGFloat(i * 10), y: 5, width: 4, height: 20))
+            line.wantsLayer = true
+            line.layer?.backgroundColor = NSColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0).cgColor
+            line.layer?.cornerRadius = 2
+            waveContainer.addSubview(line)
+        }
+
+        // 标题
+        let titleLabel = NSTextField(frame: NSRect(x: 0, y: 50, width: 280, height: 30))
+        titleLabel.stringValue = "语音输入"
+        titleLabel.textColor = NSColor.white
+        titleLabel.font = NSFont.systemFont(ofSize: 20, weight: .semibold)
+        titleLabel.alignment = .center
+        titleLabel.isEditable = false
+        titleLabel.isBordered = false
+        titleLabel.backgroundColor = NSColor.clear
+
+        // 副标题
+        let subtitleLabel = NSTextField(frame: NSRect(x: 0, y: 25, width: 280, height: 20))
+        subtitleLabel.stringValue = "已就绪"
+        subtitleLabel.textColor = NSColor(red: 0.6, green: 0.6, blue: 0.65, alpha: 1.0)
+        subtitleLabel.font = NSFont.systemFont(ofSize: 13)
+        subtitleLabel.alignment = .center
+        subtitleLabel.isEditable = false
+        subtitleLabel.isBordered = false
+        subtitleLabel.backgroundColor = NSColor.clear
+
+        containerView.addSubview(bgView)
+        containerView.addSubview(borderView)
+        containerView.addSubview(iconBg)
+        containerView.addSubview(waveContainer)
+        containerView.addSubview(titleLabel)
+        containerView.addSubview(subtitleLabel)
+
+        self.contentView = containerView
+
+        // 淡入动画
+        self.alphaValue = 0
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            self.animator().alphaValue = 1
+        })
+    }
+
+    func dismiss(completion: @escaping () -> Void) {
+        // 淡出动画
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            self.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            self?.orderOut(nil)
+            completion()
+        })
+    }
+}
+
 // MARK: - 单实例锁
 class SingleInstanceLock {
     static let shared = SingleInstanceLock()
     private let lockPath = "/tmp/voiceoverlay.lock"
-    private var lockFile: FileHandle?
 
     func acquire() -> Bool {
-        // 检查是否有其他实例在运行（使用文件锁）
-        let lockPath = "/tmp/voiceoverlay.lock"
-
-        // 尝试打开或创建锁文件
         let fileManager = FileManager.default
+
+        // 清理可能残留的旧锁文件
         if fileManager.fileExists(atPath: lockPath) {
-            // 检查锁文件对应的进程是否还在运行
             if let pidStr = try? String(contentsOfFile: lockPath, encoding: .utf8),
                let pid = Int32(pidStr.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                // 发送信号0检查进程是否存在
+                // 检查进程是否还在运行且是 VoiceOverlay（不是 asr_server）
                 if kill(pid, 0) == 0 {
-                    print("VoiceOverlay 已在运行中 (PID: \(pid))")
-                    return false
+                    // 进程存在，检查是否是 VoiceOverlay 进程
+                    let task = Process()
+                    task.launchPath = "/bin/ps"
+                    task.arguments = ["-p", String(pid), "-o", "comm="]
+                    let pipe = Pipe()
+                    task.standardOutput = pipe
+                    task.launch()
+                    task.waitUntilExit()
+
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    if let output = String(data: data, encoding: .utf8),
+                       output.contains("VoiceOverlay") && !output.contains("asr_server") {
+                        print("VoiceOverlay 已在运行中 (PID: \(pid))")
+                        return false
+                    }
                 }
             }
-            // 进程不存在，删除旧锁文件
+            // 进程不存在或不是 VoiceOverlay，删除旧锁
             try? fileManager.removeItem(atPath: lockPath)
         }
 
@@ -557,6 +666,7 @@ class SingleInstanceLock {
 // MARK: - 应用代理
 class AppDelegate: NSObject, NSApplicationDelegate {
     var window: VoiceOverlayWindow!
+    var splashWindow: SplashWindow!
     var statusItem: NSStatusItem!
     var recorder = AudioRecorder()
     var isRecording = false
@@ -569,6 +679,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSApplication.shared.terminate(nil)
             return
         }
+
+        // 显示启动画面
+        showSplashScreen()
+    }
+
+    func showSplashScreen() {
+        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        let splashWidth: CGFloat = 280
+        let splashHeight: CGFloat = 200
+        let x = (screenFrame.width - splashWidth) / 2
+        let y = (screenFrame.height - splashHeight) / 2
+
+        splashWindow = SplashWindow(
+            contentRect: NSRect(x: x, y: y, width: splashWidth, height: splashHeight),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        splashWindow.makeKeyAndOrderFront(nil)
+
+        // 2秒后淡出并初始化主应用
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.splashWindow.dismiss { [weak self] in
+                self?.initializeMainApp()
+            }
+        }
+    }
+
+    func initializeMainApp() {
         // 创建悬浮窗
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
         let windowWidth: CGFloat = 140

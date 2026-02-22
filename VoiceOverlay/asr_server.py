@@ -29,6 +29,50 @@ CONFIG = {
 _current_model = None
 _current_model_key = None
 
+# 热词缓存
+_hotwords = None
+_hotwords_mtime = 0
+
+def load_hotwords():
+    """加载热词词库，支持热更新"""
+    global _hotwords, _hotwords_mtime
+
+    # 支持多个热词文件位置
+    hotwords_paths = [
+        Path(__file__).parent.parent / "hotwords.txt",  # 项目根目录
+        Path(__file__).parent / "hotwords.txt",         # VoiceOverlay 目录
+        Path.home() / ".config/ole_voice/hotwords.txt", # 用户配置目录
+    ]
+
+    hotwords_file = None
+    for path in hotwords_paths:
+        if path.exists():
+            hotwords_file = path
+            break
+
+    if hotwords_file is None:
+        return None
+
+    # 检查文件修改时间，避免重复加载
+    try:
+        mtime = hotwords_file.stat().st_mtime
+        if mtime == _hotwords_mtime and _hotwords is not None:
+            return _hotwords
+
+        with open(hotwords_file, 'r', encoding='utf-8') as f:
+            lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+
+        _hotwords = lines
+        _hotwords_mtime = mtime
+
+        if lines:
+            print(f"[Hotwords] 加载 {len(lines)} 个热词 from {hotwords_file}")
+
+        return _hotwords
+    except Exception as e:
+        print(f"[Hotwords] 加载失败: {e}")
+        return None
+
 def load_config():
     """加载用户配置"""
     global CONFIG
@@ -99,18 +143,33 @@ def transcribe_audio(audio_path: str) -> dict:
         lang_map = {'zh': 'Chinese', 'en': 'English', 'auto': 'Chinese'}
         mlx_lang = lang_map.get(CONFIG['language'], 'Chinese')
 
+        # 加载热词
+        hotwords = load_hotwords()
+        context = None
+        if hotwords:
+            # 将热词格式化为上下文提示
+            context = "重要术语: " + ", ".join(hotwords[:20])  # 限制热词数量避免过长
+            print(f"[ASR] 使用热词: {len(hotwords)} 个")
+
         print(f"[ASR] 开始转录 (模型: {model_key}, 语言: {mlx_lang})...")
 
         # 创建临时输出文件路径
         output_path = tempfile.NamedTemporaryFile(suffix='.txt', delete=False).name
 
-        result = generate_transcription(
-            model=model,
-            audio=audio_path,
-            output_path=output_path,
-            language=mlx_lang,
-            verbose=False
-        )
+        # 构建转录参数
+        transcription_kwargs = {
+            "model": model,
+            "audio": audio_path,
+            "output_path": output_path,
+            "language": mlx_lang,
+            "verbose": False
+        }
+
+        # 如果有热词，添加到 context 参数
+        if context:
+            transcription_kwargs["context"] = context
+
+        result = generate_transcription(**transcription_kwargs)
 
         # 清理临时输出文件
         try:

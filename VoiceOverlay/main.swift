@@ -148,7 +148,7 @@ class VoiceOverlayWindow: NSWindow {
         innerBorder.layer?.borderColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.06).cgColor
 
         // 文字标签 - 使用更细的字体
-        let label = NSTextField(frame: NSRect(x: 14, y: 0, width: 68, height: 44))
+        let label = NSTextField(frame: NSRect(x: 14, y: 12, width: 68, height: 20))
         label.stringValue = "语音输入"
         label.textColor = NSColor(red: 0.95, green: 0.95, blue: 0.97, alpha: 1.0)
         // 使用更细的系统字体
@@ -158,8 +158,8 @@ class VoiceOverlayWindow: NSWindow {
             label.font = NSFont(name: "PingFangSC-Medium", size: 12) ?? NSFont.systemFont(ofSize: 12)
         }
         label.isEditable = false
-        label.isBordered = false
-        label.backgroundColor = NSColor.clear
+        label.isBezeled = false
+        label.drawsBackground = false
         label.alignment = .left
 
         // 精致的分隔线 - 渐变效果
@@ -536,27 +536,29 @@ class SingleInstanceLock {
     private var lockFile: FileHandle?
 
     func acquire() -> Bool {
-        // 检查是否有其他实例在运行
-        let task = Process()
-        task.launchPath = "/usr/bin/pgrep"
-        task.arguments = ["-f", "VoiceOverlay"]
+        // 检查是否有其他实例在运行（使用文件锁）
+        let lockPath = "/tmp/voiceoverlay.lock"
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.launch()
-        task.waitUntilExit()
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        if let output = String(data: data, encoding: .utf8) {
-            let pids = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: "\n")
-                .filter { !$0.isEmpty }
-            // 如果找到超过1个进程（包括自己），说明已有实例在运行
-            if pids.count > 1 {
-                print("VoiceOverlay 已在运行中 (PID: \(pids[0]))")
-                return false
+        // 尝试打开或创建锁文件
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: lockPath) {
+            // 检查锁文件对应的进程是否还在运行
+            if let pidStr = try? String(contentsOfFile: lockPath, encoding: .utf8),
+               let pid = Int32(pidStr.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                // 发送信号0检查进程是否存在
+                if kill(pid, 0) == 0 {
+                    print("VoiceOverlay 已在运行中 (PID: \(pid))")
+                    return false
+                }
             }
+            // 进程不存在，删除旧锁文件
+            try? fileManager.removeItem(atPath: lockPath)
         }
+
+        // 创建新锁文件
+        let currentPid = ProcessInfo.processInfo.processIdentifier
+        try? String(currentPid).write(toFile: lockPath, atomically: true, encoding: .utf8)
+
         return true
     }
 }

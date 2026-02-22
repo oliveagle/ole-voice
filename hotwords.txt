@@ -35,8 +35,13 @@ QLoRA
 训练
 数据集
 Token
+token
+tokens
 Tokenizer
+tokenizer
 分词器
+托肯
+透肯
 推理加速
 模型压缩
 知识蒸馏

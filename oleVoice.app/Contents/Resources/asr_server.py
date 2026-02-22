@@ -131,6 +131,116 @@ def load_model(model_key: str):
 
     return _current_model
 
+# 音近词纠正映射表
+PHONETIC_CORRECTIONS = {
+    # AI/编程术语音近纠正
+    "托肯": "token",
+    "透肯": "token",
+    "托卡": "token",
+    "图肯": "token",
+    "透卡": "token",
+    "托克": "token",
+
+    # 其他常见术语
+    "恩 beds": "embeddings",
+    "恩 bedding": "embeddings",
+    "艾 beds": "embeddings",
+    "啦 bed": "LoRA",
+    "罗拉": "LoRA",
+    "劳拉": "LoRA",
+    "罗娜": "LoRA",
+
+    # 编程术语
+    "派森": "Python",
+    "拍森": "Python",
+    "拍森": "Python",
+    "趴森": "Python",
+    "泰普 script": "TypeScript",
+    "泰普斯克瑞普特": "TypeScript",
+    "凯特": "Kotlin",
+    "考特林": "Kotlin",
+
+    # 框架/工具
+    "瑞艾科特": "React",
+    "瑞艾克": "React",
+    "维艾尤": "Vue",
+    "维尤": "Vue",
+    "维尤": "Vue",
+    "安古勒": "Angular",
+    "安哥拉": "Angular",
+    "节普斯": "GitHub",
+    "吉哈布": "GitHub",
+    "吉哈伯": "GitHub",
+    "吉特": "Git",
+    "给特": "Git",
+
+    # 数据库
+    "麦斯库尔": "MySQL",
+    "麦塞库尔": "MySQL",
+    "迈斯库尔": "MySQL",
+    "普斯特": "Postgres",
+    "普斯格瑞": "PostgreSQL",
+    "波斯格瑞": "PostgreSQL",
+    "蒙勾DB": "MongoDB",
+    "蒙勾": "MongoDB",
+    "瑞迪斯": "Redis",
+    "瑞地斯": "Redis",
+
+    # 云计算/容器
+    "达克": "Docker",
+    "多克": "Docker",
+    "道克": "Docker",
+    "库伯奈特斯": "Kubernetes",
+    "库伯奈提斯": "Kubernetes",
+    "K八s": "K8s",
+    "K八斯": "K8s",
+    "奈克斯": "Nginx",
+    "恩静克斯": "Nginx",
+
+    # AI术语
+    " attentions": "attention",
+    "爱腾神": "attention",
+    "爱腾审": "attention",
+    "拔特": "BERT",
+    "博特": "BERT",
+    "伯特": "BERT",
+    "吉皮梯": "GPT",
+    "吉皮提": "GPT",
+    "吉皮踢": "GPT",
+    "爱奥艾姆": "LLM",
+    "艾奥艾姆": "LLM",
+
+    # 通用英文
+    "API": "API",
+    "埃批艾": "API",
+    "阿批艾": "API",
+    "埃普艾": "API",
+    "尤艾": "UI",
+    "尤克斯": "UX",
+    "西艾": "CI",
+    "西迪": "CD",
+    "西艾西迪": "CI/CD",
+}
+
+def apply_phonetic_corrections(text: str) -> str:
+    """应用音近词纠正"""
+    if not text:
+        return text
+
+    corrected = text
+    for wrong, correct in PHONETIC_CORRECTIONS.items():
+        # 使用词边界匹配，避免误替换
+        import re
+        # 构建正则：匹配整个词，支持中文词边界
+        pattern = re.escape(wrong)
+        corrected = re.sub(pattern, correct, corrected)
+
+    # 如果发生了纠正，记录日志
+    if corrected != text:
+        print(f"[Phonetic] '{text}' -> '{corrected}'")
+
+    return corrected
+
 def transcribe_audio(audio_path: str) -> dict:
     """使用 MLX Audio 转录音频"""
     try:
@@ -178,6 +288,10 @@ def transcribe_audio(audio_path: str) -> dict:
             pass
 
         text = result.text.strip() if hasattr(result, 'text') else str(result).strip()
+
+        # 音近词纠正（处理常见误识别）
+        text = apply_phonetic_corrections(text)
+
         return {"success": True, "text": text}
 
     except Exception as e:

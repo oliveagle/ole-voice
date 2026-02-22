@@ -1,64 +1,23 @@
-# 语音输入工具配置
-
-# 快捷键设置
-# 格式: <key> 或 <modifier>+<key>
-# modifier 可选: ctrl, alt, cmd, shift, cmd_r (右command), cmd_l (左command)
-# 示例: cmd+shift+r, f8, ctrl+space, cmd_r
-hotkey: "cmd_l"
-
-# 模型配置
+hotkey: cmd_l
+asr:
+  model: 0.6B
+  language: zh
+  models:
+    0.6B: mlx-community/Qwen3-ASR-0.6B-8bit
+    1.7B: mlx-community/Qwen3-ASR-1.7B-8bit
 model:
-  # 模型大小: tiny, base, small, medium, large-v1, large-v2, large-v3
-  # 越大越准确，但也越慢、占用更多内存
-  # 推荐: small (平衡) 或 medium (更好质量)
-  # tiny 模型最小(39MB)，适合测试
-  size: "tiny"
-
-  # 模型存储路径 (可选，默认 ~/.cache/whisper)
-  # download_root: "~/models/whisper"
-
-  # 计算设备: cpu, cuda, auto
-  device: "auto"
-
-  # 计算类型: int8, float16, float32
-  # int8 最快但精度稍低，float16 平衡
-  compute_type: "int8"
-
-  # 语言: 默认自动检测 (auto)，或指定如 "zh"(中文), "en"(英文), "ja"(日文)
-  # 如果自动检测不准，建议强制指定
-  language: "zh"
-
-# 录音配置
+  size: tiny
+  device: auto
+  compute_type: int8
+  language: zh
 recording:
-  # 采样率
   sample_rate: 16000
-
-  # 录音设备索引 (None 使用默认设备)
   device_index: null
-
-# 输出配置
 output:
-  # 输入方式:
-  # - "type": 模拟键盘输入 (直接输入到当前文本框)
-  #        注意: 中文输入法下输入英文会被打断，建议用 paste 模式
-  # - "paste": 复制到剪贴板并粘贴 (推荐，绕过输入法)
-  # - "clipboard": 仅复制到剪贴板
-  mode: "paste"
-
-  # 是否保留录音文件
+  mode: paste
   keep_audio: false
-
-  # 录音文件保存路径 (当 keep_audio 为 true 时)
-  audio_path: "~/voice_recordings"
-
-# 高级选项
+  audio_path: ~/voice_recordings
 advanced:
-  # 语音活动检测阈值 (0-1)，越高越严格
   vad_threshold: 0.5
-
-  # 静音持续时间(秒)后自动停止录音
-  # 设为 0 禁用自动停止
   silence_timeout: 0
-
-  # 最大录音时长(秒)，防止忘记停止
   max_duration: 60

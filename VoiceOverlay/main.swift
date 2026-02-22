@@ -116,35 +116,77 @@ class VoiceOverlayWindow: NSWindow {
     }
 
     func setupUI() {
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 50))
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 44))
 
-        let background = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 50))
-        background.wantsLayer = true
-        background.layer?.backgroundColor = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.95).cgColor
-        background.layer?.cornerRadius = 25
-        background.layer?.borderWidth = 0.5
-        background.layer?.borderColor = NSColor(red: 0.2, green: 0.2, blue: 0.2, alpha: 1.0).cgColor
-        contentView.addSubview(background)
+        // 毛玻璃效果背景
+        let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 180, height: 44))
+        visualEffectView.material = .hudWindow
+        visualEffectView.state = .active
+        visualEffectView.blendingMode = .behindWindow
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.cornerRadius = 22
+        visualEffectView.layer?.masksToBounds = true
 
-        let label = NSTextField(frame: NSRect(x: 15, y: 12, width: 80, height: 26))
+        // 深色半透明覆盖层
+        let darkOverlay = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 44))
+        darkOverlay.wantsLayer = true
+        darkOverlay.layer?.backgroundColor = NSColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 0.85).cgColor
+        darkOverlay.layer?.cornerRadius = 22
+
+        // 精致的发光边框
+        let borderView = NSView(frame: NSRect(x: 0.5, y: 0.5, width: 179, height: 43))
+        borderView.wantsLayer = true
+        borderView.layer?.cornerRadius = 21.5
+        borderView.layer?.borderWidth = 0.8
+        borderView.layer?.borderColor = NSColor(red: 0.35, green: 0.35, blue: 0.4, alpha: 0.5).cgColor
+
+        // 内部高光边框
+        let innerBorder = NSView(frame: NSRect(x: 1.5, y: 1.5, width: 177, height: 41))
+        innerBorder.wantsLayer = true
+        innerBorder.layer?.cornerRadius = 20.5
+        innerBorder.layer?.borderWidth = 0.5
+        innerBorder.layer?.borderColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.06).cgColor
+
+        // 文字标签 - 使用更细的字体
+        let label = NSTextField(frame: NSRect(x: 14, y: 10, width: 68, height: 24))
         label.stringValue = "语音输入"
-        label.textColor = NSColor.white
-        label.font = NSFont(name: "PingFang SC", size: 14) ?? NSFont.systemFont(ofSize: 14)
+        label.textColor = NSColor(red: 0.95, green: 0.95, blue: 0.97, alpha: 1.0)
+        // 使用更细的系统字体
+        if #available(macOS 11.0, *) {
+            label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        } else {
+            label.font = NSFont(name: "PingFangSC-Medium", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        }
         label.isEditable = false
         label.isBordered = false
         label.backgroundColor = NSColor.clear
-        label.alignment = .center
-        contentView.addSubview(label)
+        label.alignment = .left
 
-        let separator = NSView(frame: NSRect(x: 100, y: 12, width: 1, height: 26))
+        // 精致的分隔线 - 渐变效果
+        let separator = NSView(frame: NSRect(x: 86, y: 10, width: 1, height: 24))
         separator.wantsLayer = true
-        separator.layer?.backgroundColor = NSColor(red: 0.27, green: 0.27, blue: 0.27, alpha: 1.0).cgColor
-        contentView.addSubview(separator)
+        separator.layer?.backgroundColor = NSColor(red: 0.4, green: 0.4, blue: 0.45, alpha: 0.35).cgColor
 
-        waveView = WaveView(frame: NSRect(x: 110, y: 0, width: 80, height: 50))
-        contentView.addSubview(waveView)
+        // 录音状态指示器
+        let indicator = NSView(frame: NSRect(x: 80, y: 20, width: 3, height: 3))
+        indicator.wantsLayer = true
+        indicator.layer?.backgroundColor = NSColor(red: 1.0, green: 0.3, blue: 0.3, alpha: 1.0).cgColor
+        indicator.layer?.cornerRadius = 1.5
 
-        self.contentView = contentView
+        // 音波视图
+        waveView = WaveView(frame: NSRect(x: 92, y: 0, width: 80, height: 44))
+
+        // 组装视图层次
+        containerView.addSubview(visualEffectView)
+        containerView.addSubview(darkOverlay)
+        containerView.addSubview(borderView)
+        containerView.addSubview(innerBorder)
+        containerView.addSubview(label)
+        containerView.addSubview(separator)
+        containerView.addSubview(indicator)
+        containerView.addSubview(waveView)
+
+        self.contentView = containerView
     }
 
     func showWindow() {
@@ -160,49 +202,91 @@ class VoiceOverlayWindow: NSWindow {
 
 // MARK: - 音波动画视图
 class WaveView: NSView {
-    private var amplitudes: [CGFloat] = [0.5, 0.5, 0.5, 0.5, 0.5]
+    private var bars: [CGFloat] = Array(repeating: 0.3, count: 7)
+    private var targetBars: [CGFloat] = Array(repeating: 0.3, count: 7)
     private var isAnimating = false
+    private var animationTimer: Timer?
+
+    // 渐变色定义 (青色到蓝色)
+    private let gradientColors = [
+        NSColor(red: 0.0, green: 0.9, blue: 0.6, alpha: 1.0),   // 青绿
+        NSColor(red: 0.0, green: 0.85, blue: 0.75, alpha: 1.0), // 青蓝
+        NSColor(red: 0.0, green: 0.75, blue: 0.9, alpha: 1.0),  // 浅蓝
+        NSColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0),   // 蓝色
+        NSColor(red: 0.4, green: 0.5, blue: 1.0, alpha: 1.0),   // 紫蓝
+        NSColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0),
+        NSColor(red: 0.0, green: 0.75, blue: 0.9, alpha: 1.0)
+    ]
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        let barWidth: CGFloat = 4
-        let barGap: CGFloat = 6
-        let totalWidth = 5 * barWidth + 4 * barGap
+        let barWidth: CGFloat = 3
+        let barGap: CGFloat = 4
+        let totalWidth = CGFloat(bars.count) * barWidth + CGFloat(bars.count - 1) * barGap
         let startX = (bounds.width - totalWidth) / 2
+        let maxBarHeight: CGFloat = 26
+        let minBarHeight: CGFloat = 3
         let centerY = bounds.height / 2
 
-        for (i, amp) in amplitudes.enumerated() {
-            let barHeight = 4 + amp * 20
+        for (i, amplitude) in bars.enumerated() {
+            let barHeight = minBarHeight + amplitude * (maxBarHeight - minBarHeight)
             let x = startX + CGFloat(i) * (barWidth + barGap)
             let y = centerY - barHeight / 2
 
             let rect = NSRect(x: x, y: y, width: barWidth, height: barHeight)
-            let path = NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2)
+            let path = NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5)
 
-            NSColor(red: 0.0, green: 0.82, blue: 0.42, alpha: 1.0).setFill()
+            // 使用渐变色
+            let color = gradientColors[i % gradientColors.count]
+            color.setFill()
             path.fill()
+
+            // 添加微妙的发光效果
+            let glowPath = NSBezierPath(roundedRect: rect.insetBy(dx: -0.5, dy: -0.5), xRadius: 2, yRadius: 2)
+            color.withAlphaComponent(0.3).setStroke()
+            glowPath.lineWidth = 0.5
+            glowPath.stroke()
         }
     }
 
     func startAnimation() {
         isAnimating = true
-        animate()
+        // 使用 Timer 替代 DispatchQueue 以获得更平滑的动画
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            self?.updateAnimation()
+        }
+        RunLoop.current.add(animationTimer!, forMode: .common)
     }
 
     func stopAnimation() {
         isAnimating = false
+        animationTimer?.invalidate()
+        animationTimer = nil
+        // 重置为平静状态
+        bars = Array(repeating: 0.3, count: 7)
+        needsDisplay = true
     }
 
-    func animate() {
+    private func updateAnimation() {
         guard isAnimating else { return }
 
-        amplitudes = (0..<5).map { _ in CGFloat.random(in: 0.2...1.0) }
-        needsDisplay = true
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            self?.animate()
+        // 生成新的目标值 (中间条形更高，形成波浪效果)
+        let centerIndex = bars.count / 2
+        targetBars = bars.indices.map { i in
+            let distance = abs(i - centerIndex)
+            let baseAmplitude = 1.0 - Double(distance) * 0.15
+            let randomVariation = CGFloat.random(in: 0.3...1.0)
+            return max(0.2, min(1.0, baseAmplitude * randomVariation))
         }
+
+        // 平滑插值到目标值
+        for i in bars.indices {
+            let diff = targetBars[i] - bars[i]
+            bars[i] += diff * 0.3 // 平滑系数
+        }
+
+        needsDisplay = true
     }
 }
 
@@ -451,12 +535,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var recorder = AudioRecorder()
     var isRecording = false
+    var asrProcess: Process?
+    var asrMonitorTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 创建悬浮窗
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
-        let windowWidth: CGFloat = 200
-        let windowHeight: CGFloat = 50
+        let windowWidth: CGFloat = 180
+        let windowHeight: CGFloat = 44
         let x = (screenFrame.width - windowWidth) / 2
         let y: CGFloat = 100
 
@@ -469,7 +555,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 创建菜单栏图标
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🎤"
+        if let button = statusItem.button {
+            button.image = NSImage(systemSymbolName: "waveform.circle.fill", accessibilityDescription: "语音输入")
+            button.imagePosition = .imageOnly
+        }
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "开始录音", action: #selector(startRecording), keyEquivalent: ""))
@@ -488,24 +577,151 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         print("✓ VoiceOverlay 已启动")
         if hotkeyRegistered {
-            print("  按左 Command 开始/停止录音")
+            print("  按右 Command 开始/停止录音")
         } else {
             print("  ⚠️ 快捷键注册失败，请授予辅助功能权限")
             print("     系统设置 -> 隐私与安全性 -> 辅助功能")
         }
 
-        // 检查 ASR 服务端
-        checkASRServer()
+        // 启动 ASR 服务
+        startASRServer()
+
+        // 启动监控定时器
+        startASRMonitor()
     }
 
-    func checkASRServer() {
+    func startASRServer() {
         let socketPath = "/tmp/voice_asr_socket"
-        if !FileManager.default.fileExists(atPath: socketPath) {
-            print("  ⚠️ ASR 服务端未运行")
-            print("     请运行: python3 VoiceOverlay/asr_server.py")
-        } else {
-            print("  ✓ ASR 服务端已就绪")
+
+        // 如果socket已存在，检查是否可用
+        if FileManager.default.fileExists(atPath: socketPath) {
+            // 尝试连接测试
+            var isRunning = false
+            let testSocket = try? Socket.create(family: .unix, type: .stream, protocol: .unix)
+            if let socket = testSocket {
+                do {
+                    try socket.connect(to: socketPath)
+                    socket.close()
+                    isRunning = true
+                    print("  ✓ ASR 服务端已就绪")
+                } catch {
+                    print("  ⚠️ ASR socket 存在但无法连接，将清理并重启")
+                    try? FileManager.default.removeItem(atPath: socketPath)
+                }
+            }
+            if isRunning { return }
         }
+
+        print("  启动 ASR 服务端...")
+
+        // 获取应用bundle路径
+        let bundlePath = Bundle.main.bundlePath
+        let resourcesPath = Bundle.main.resourcePath ?? "\(bundlePath)/Contents/Resources"
+        let asrScriptPath = "\(resourcesPath)/asr_server.py"
+
+        let process = Process()
+
+        // 首先尝试使用venv Python
+        let venvPython = NSHomeDirectory() + "/ole/repos/github.com/oliveagle/ole_asr/venv/bin/python3"
+        if FileManager.default.fileExists(atPath: venvPython) {
+            process.executableURL = URL(fileURLWithPath: venvPython)
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["python3", asrScriptPath]
+        }
+
+        if process.arguments == nil {
+            process.arguments = [asrScriptPath]
+        }
+
+        process.currentDirectoryURL = URL(fileURLWithPath: resourcesPath)
+
+        // 设置环境变量
+        var environment = ProcessInfo.processInfo.environment
+        environment["PYTHONUNBUFFERED"] = "1"
+        process.environment = environment
+
+        // 重定向输出到日志
+        let logPath = "/tmp/asr_server.log"
+        if let logHandle = FileHandle(forWritingAtPath: logPath) {
+            process.standardOutput = logHandle
+            process.standardError = logHandle
+        }
+
+        do {
+            try process.run()
+            asrProcess = process
+            print("  ✓ ASR 服务端启动中 (PID: \(process.processIdentifier))")
+
+            // 等待socket创建
+            var attempts = 0
+            while attempts < 10 {
+                Thread.sleep(forTimeInterval: 0.5)
+                if FileManager.default.fileExists(atPath: socketPath) {
+                    print("  ✓ ASR 服务端已就绪")
+                    return
+                }
+                attempts += 1
+            }
+            print("  ⚠️ ASR 服务端启动超时")
+        } catch {
+            print("  ✗ ASR 服务端启动失败: \(error)")
+        }
+    }
+
+    func startASRMonitor() {
+        asrMonitorTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.checkAndRestartASR()
+        }
+    }
+
+    func checkAndRestartASR() {
+        let socketPath = "/tmp/voice_asr_socket"
+
+        // 检查socket是否存在且可连接
+        var isRunning = false
+        if FileManager.default.fileExists(atPath: socketPath) {
+            let testSocket = try? Socket.create(family: .unix, type: .stream, protocol: .unix)
+            if let socket = testSocket {
+                do {
+                    try socket.connect(to: socketPath)
+                    socket.close()
+                    isRunning = true
+                } catch {
+                    // 无法连接，需要重启
+                }
+            }
+        }
+
+        if !isRunning {
+            print("[ASR] 服务不可用，正在重启...")
+            // 清理旧socket
+            try? FileManager.default.removeItem(atPath: socketPath)
+            // 终止旧进程
+            asrProcess?.terminate()
+            // 重新启动
+            startASRServer()
+        }
+    }
+
+    func stopASRServer() {
+        asrMonitorTimer?.invalidate()
+        asrMonitorTimer = nil
+
+        if let process = asrProcess, process.isRunning {
+            process.terminate()
+            // 等待进程结束
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                if process.isRunning {
+                    // 强制终止
+                    kill(process.processIdentifier, SIGKILL)
+                }
+            }
+        }
+
+        // 清理socket
+        let socketPath = "/tmp/voice_asr_socket"
+        try? FileManager.default.removeItem(atPath: socketPath)
     }
 
     @objc func toggleRecording() {
@@ -570,6 +786,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func quit() {
+        stopASRServer()
         NSApplication.shared.terminate(nil)
     }
 }

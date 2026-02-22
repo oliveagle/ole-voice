@@ -9,7 +9,8 @@ echo "编译 VoiceOverlay..."
 swiftc -O main.swift -o VoiceOverlay \
     -framework Cocoa \
     -framework Carbon \
-    -framework AVFoundation
+    -framework AVFoundation \
+    -framework CoreVideo
 
 if [ $? -eq 0 ]; then
     echo "✓ 编译成功"

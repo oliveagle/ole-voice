@@ -24,7 +24,15 @@ class GlobalHotkeyManager {
     var runLoopSource: CFRunLoopSource?
     var callback: (() -> Void)?
 
+    private var isRegistered = false
+
     func registerHotkey(callback: @escaping () -> Void) -> Bool {
+        // 防止重复注册
+        if isRegistered {
+            print("[Hotkey] 已经注册过了")
+            return true
+        }
+
         self.callback = callback
 
         let eventMask = (1 << CGEventType.flagsChanged.rawValue)
@@ -49,6 +57,7 @@ class GlobalHotkeyManager {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
+        isRegistered = true
         return true
     }
 
@@ -57,35 +66,36 @@ class GlobalHotkeyManager {
 
         if type == .flagsChanged {
             let flags = event.flags
-            let isCommandOnly = flags.contains(.maskCommand) &&
-                               !flags.contains(.maskShift) &&
-                               !flags.contains(.maskAlternate) &&
-                               !flags.contains(.maskControl)
+            let keycode = event.getIntegerValueField(.keyboardEventKeycode)
 
             struct Static {
                 static var lastTrigger: TimeInterval = 0
-                static var wasCommandPressed = false
+                static var wasRightCommandPressed = false
             }
 
-            if isCommandOnly {
-                if !Static.wasCommandPressed {
-                    Static.wasCommandPressed = true
-                }
-            } else {
-                if Static.wasCommandPressed {
-                    Static.wasCommandPressed = false
-                    let now = Date().timeIntervalSince1970
-                    if now - Static.lastTrigger > 0.5 {
-                        Static.lastTrigger = now
-                        DispatchQueue.main.async {
-                            manager.callback?()
-                        }
+            // 只处理右 Command (keycode 54)
+            guard keycode == 54 else {
+                return Unmanaged.passUnretained(event)
+            }
+
+            let isCommandPressed = flags.contains(.maskCommand)
+
+            if isCommandPressed && !Static.wasRightCommandPressed {
+                Static.wasRightCommandPressed = true
+            } else if !isCommandPressed && Static.wasRightCommandPressed {
+                Static.wasRightCommandPressed = false
+                let now = Date().timeIntervalSince1970
+                // 增加防抖动时间到 1 秒
+                if now - Static.lastTrigger > 1.0 {
+                    Static.lastTrigger = now
+                    DispatchQueue.main.async {
+                        manager.callback?()
                     }
                 }
             }
         }
 
-        return Unmanaged.passRetained(event)
+        return Unmanaged.passUnretained(event)
     }
 }
 
@@ -302,30 +312,46 @@ class ASRClient {
     func transcribe(audioData: Data, completion: @escaping (String?) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
+                print("[ASR] 创建 socket...")
                 let socket = try self.createSocket()
                 defer { socket.close() }
+                print("[ASR] Socket 连接成功")
 
                 // 发送音频数据长度
                 var length = UInt32(audioData.count).bigEndian
-                _ = withUnsafeBytes(of: &length) { socket.write(Data($0)) }
+                let sentLen = withUnsafeBytes(of: &length) { socket.write(Data($0)) }
+                print("[ASR] 发送长度: \(sentLen) bytes")
 
                 // 发送音频数据
-                _ = socket.write(audioData)
+                let sentData = socket.write(audioData)
+                print("[ASR] 发送数据: \(sentData) bytes")
 
                 // 接收结果长度
                 var resultLengthBuffer = Data(repeating: 0, count: 4)
-                _ = socket.read(into: &resultLengthBuffer)
+                let readLen = socket.read(into: &resultLengthBuffer)
+                print("[ASR] 读取长度: \(readLen) bytes")
                 let resultLength = resultLengthBuffer.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+                print("[ASR] 结果长度: \(resultLength)")
 
                 // 接收结果
                 var resultBuffer = Data(repeating: 0, count: Int(resultLength))
-                _ = socket.read(into: &resultBuffer)
+                let readResult = socket.read(into: &resultBuffer)
+                print("[ASR] 读取结果: \(readResult) bytes")
 
                 if let json = try? JSONSerialization.jsonObject(with: resultBuffer) as? [String: Any] {
+                    print("[ASR] JSON: \(json)")
                     if let success = json["success"] as? Bool, success {
                         let text = json["text"] as? String
+                        print("[ASR] 识别成功: \"\(text ?? "nil")\"")
                         DispatchQueue.main.async { completion(text) }
                         return
+                    } else {
+                        print("[ASR] 识别失败: success=\(json["success"] ?? "nil")")
+                    }
+                } else {
+                    print("[ASR] JSON 解析失败")
+                    if let str = String(data: resultBuffer, encoding: .utf8) {
+                        print("[ASR] 原始响应: \(str)")
                     }
                 }
                 DispatchQueue.main.async { completion(nil) }
@@ -510,21 +536,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 发送到 ASR 服务端
+        print("[ASR] 发送音频数据: \(audioData.count) bytes")
         ASRClient.shared.transcribe(audioData: audioData) { text in
             if let text = text, !text.isEmpty {
                 print("✓ 识别结果: \(text)")
                 self.pasteText(text)
             } else {
-                print("⚠ 未能识别语音")
+                print("⚠ 未能识别语音 (text is nil or empty)")
             }
         }
     }
 
     func pasteText(_ text: String) {
+        print("[Paste] 准备粘贴: \"\(text)\"")
+
         // 复制到剪贴板
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        let copied = pasteboard.setString(text, forType: .string)
+        print("[Paste] 复制到剪贴板: \(copied ? "成功" : "失败")")
 
         // 模拟 Command+V 粘贴
         let source = CGEventSource(stateID: .combinedSessionState)
@@ -536,6 +566,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         vDown?.post(tap: .cghidEventTap)
         vUp?.post(tap: .cghidEventTap)
+        print("[Paste] 已发送 Command+V")
     }
 
     @objc func quit() {

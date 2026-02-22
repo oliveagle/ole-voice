@@ -22,20 +22,23 @@ class GlobalHotkeyManager {
     static let shared = GlobalHotkeyManager()
     var eventTap: CFMachPort?
     var runLoopSource: CFRunLoopSource?
-    var callback: (() -> Void)?
+    var toggleCallback: (() -> Void)?
+    var cancelCallback: (() -> Void)?
 
     private var isRegistered = false
 
-    func registerHotkey(callback: @escaping () -> Void) -> Bool {
+    func registerHotkey(toggleCallback: @escaping () -> Void, cancelCallback: @escaping () -> Void) -> Bool {
         // 防止重复注册
         if isRegistered {
             print("[Hotkey] 已经注册过了")
             return true
         }
 
-        self.callback = callback
+        self.toggleCallback = toggleCallback
+        self.cancelCallback = cancelCallback
 
-        let eventMask = (1 << CGEventType.flagsChanged.rawValue)
+        // 监听 flagsChanged (修饰键) 和 keyDown (ESC 键)
+        let eventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -89,9 +92,19 @@ class GlobalHotkeyManager {
                 if now - Static.lastTrigger > 1.0 {
                     Static.lastTrigger = now
                     DispatchQueue.main.async {
-                        manager.callback?()
+                        manager.toggleCallback?()
                     }
                 }
+            }
+        } else if type == .keyDown {
+            let keycode = event.getIntegerValueField(.keyboardEventKeycode)
+            // ESC 键 keycode 是 53
+            if keycode == 53 {
+                DispatchQueue.main.async {
+                    manager.cancelCallback?()
+                }
+                // 消费 ESC 键事件，防止传递给其他应用
+                return nil
             }
         }
 
@@ -803,13 +816,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.hideWindow()
 
         // 注册全局快捷键
-        let hotkeyRegistered = GlobalHotkeyManager.shared.registerHotkey { [weak self] in
-            self?.toggleRecording()
-        }
+        let hotkeyRegistered = GlobalHotkeyManager.shared.registerHotkey(
+            toggleCallback: { [weak self] in
+                self?.toggleRecording()
+            },
+            cancelCallback: { [weak self] in
+                self?.cancelRecording()
+            }
+        )
 
         print("✓ VoiceOverlay 已启动")
         if hotkeyRegistered {
             print("  按右 Command 开始/停止录音")
+            print("  录音时按 ESC 取消")
         } else {
             print("  ⚠️ 快捷键注册失败，请授予辅助功能权限")
             print("     系统设置 -> 隐私与安全性 -> 辅助功能")
@@ -993,6 +1012,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("⚠ 未能识别语音 (text is nil or empty)")
             }
         }
+    }
+
+    @objc func cancelRecording() {
+        guard isRecording else { return }
+
+        isRecording = false
+        window.hideWindow()
+
+        // 停止录音但不获取数据（丢弃）
+        _ = recorder.stopRecording()
+
+        print("[Recording] 已取消录音（按 ESC）")
     }
 
     // 保存剪贴板所有内容类型

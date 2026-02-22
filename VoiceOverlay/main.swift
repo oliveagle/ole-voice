@@ -24,6 +24,7 @@ class GlobalHotkeyManager {
     var runLoopSource: CFRunLoopSource?
     var toggleCallback: (() -> Void)?
     var cancelCallback: (() -> Void)?
+    var isRecording: Bool = false  // 用于控制 ESC 监听
 
     private var isRegistered = false
 
@@ -60,6 +61,19 @@ class GlobalHotkeyManager {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
+        // 使用 NSEvent 全局监视器监听 ESC（不会拦截，只监视）
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            // 只在录音时处理 ESC
+            guard GlobalHotkeyManager.shared.isRecording else { return }
+
+            // ESC keycode 是 53
+            if event.keyCode == 53 {
+                DispatchQueue.main.async {
+                    GlobalHotkeyManager.shared.cancelCallback?()
+                }
+            }
+        }
+
         isRegistered = true
         return true
     }
@@ -95,15 +109,6 @@ class GlobalHotkeyManager {
                         manager.toggleCallback?()
                     }
                 }
-            }
-        } else if type == .keyDown {
-            let keycode = event.getIntegerValueField(.keyboardEventKeycode)
-            // ESC 键 keycode 是 53
-            if keycode == 53 {
-                DispatchQueue.main.async {
-                    manager.cancelCallback?()
-                }
-                // 不再拦截 ESC 键，让事件继续传递给其他应用
             }
         }
 
@@ -852,7 +857,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("✓ VoiceOverlay 已启动")
         if hotkeyRegistered {
             print("  按右 Command 开始/停止录音")
-            print("  再次按右 Command 停止或取消")
+            print("  录音时按 ESC 取消")
         } else {
             print("  ⚠️ 快捷键注册失败，请授予辅助功能权限")
             print("     系统设置 -> 隐私与安全性 -> 辅助功能")
@@ -1022,6 +1027,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         isRecording = true
+        GlobalHotkeyManager.shared.isRecording = true  // 启用 ESC 监听
         window.showWindow()
         _ = recorder.startRecording()
     }
@@ -1030,6 +1036,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard isRecording else { return }
 
         isRecording = false
+        GlobalHotkeyManager.shared.isRecording = false  // 禁用 ESC 监听
         window.hideWindow()
 
         guard let audioData = recorder.stopRecording() else {
@@ -1053,6 +1060,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard isRecording else { return }
 
         isRecording = false
+        GlobalHotkeyManager.shared.isRecording = false  // 禁用 ESC 监听
         window.hideWindow()
 
         // 停止录音但不获取数据（丢弃）

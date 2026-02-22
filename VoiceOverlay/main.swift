@@ -994,10 +994,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func pasteText(_ text: String) {
-        print("[Paste] 准备粘贴: \"\(text)\"")
+        print("[Paste] 准备输入: \"\(text)\"")
+
+        // 保存当前剪贴板内容
+        let pasteboard = NSPasteboard.general
+        let oldContents = pasteboard.string(forType: .string)
 
         // 复制到剪贴板
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         let copied = pasteboard.setString(text, forType: .string)
         print("[Paste] 复制到剪贴板: \(copied ? "成功" : "失败")")
@@ -1013,6 +1016,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         vDown?.post(tap: .cghidEventTap)
         vUp?.post(tap: .cghidEventTap)
         print("[Paste] 已发送 Command+V")
+
+        // 延迟恢复剪贴板
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            pasteboard.clearContents()
+            if let oldText = oldContents {
+                pasteboard.setString(oldText, forType: .string)
+                print("[Paste] 剪贴板已恢复")
+            }
+        }
     }
 
     @objc func quit() {

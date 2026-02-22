@@ -103,8 +103,7 @@ class GlobalHotkeyManager {
                 DispatchQueue.main.async {
                     manager.cancelCallback?()
                 }
-                // 消费 ESC 键事件，防止传递给其他应用
-                return nil
+                // 不再拦截 ESC 键，让事件继续传递给其他应用
             }
         }
 

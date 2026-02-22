@@ -1,0 +1,31 @@
+#!/bin/bash
+# 启动语音输入工具（带 Swift 悬浮窗）
+
+cd "$(dirname "$0")"
+
+# 激活虚拟环境
+source venv/bin/activate
+
+# 检查 Swift 程序是否存在
+if [ ! -f "VoiceOverlay/VoiceOverlay" ]; then
+    echo "Swift 程序未编译，正在编译..."
+    cd VoiceOverlay
+    chmod +x build.sh
+    ./build.sh
+    cd ..
+fi
+
+# 启动 Swift 悬浮窗（后台）
+echo "启动 Swift 悬浮窗..."
+./VoiceOverlay/VoiceOverlay &
+echo $! > /tmp/voice_overlay.pid
+
+# 等待 Swift 启动
+sleep 1
+
+# 启动 Python 程序
+echo "启动语音输入..."
+python3 voice_with_overlay.py
+
+# Python 退出后，关闭 Swift 程序
+kill $(cat /tmp/voice_overlay.pid) 2>/dev/null

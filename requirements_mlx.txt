@@ -1,0 +1,5 @@
+mlx-whisper
+pyaudio
+pynput
+pyyaml
+pyperclip

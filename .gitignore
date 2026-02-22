@@ -1,0 +1,43 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Swift / macOS
+.DS_Store
+*.swp
+*.xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# 编译产物
+VoiceOverlay/VoiceOverlay
+*.o
+*.a
+
+# 临时文件
+*.wav
+*.tmp
+/tmp/
+
+# 模型缓存 (大文件)
+*.bin
+*.safetensors
+*.ckpt
+*.pth
+*.pt
+
+# 配置中的敏感信息
+.env
+secrets.yaml
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# 日志
+*.log

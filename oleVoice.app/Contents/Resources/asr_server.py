@@ -354,6 +354,49 @@ def handle_client(conn: socket.socket):
     finally:
         conn.close()
 
+def warmup_model():
+    """预热模型，提前加载到内存"""
+    try:
+        print("[ASR Server] 正在预热模型...")
+        model_key = CONFIG['model']
+        model = load_model(model_key)
+
+        # 创建一段静音音频进行假转录，触发模型编译
+        import numpy as np
+        silence = np.zeros(16000, dtype=np.float32)  # 1秒静音
+
+        # 保存为临时 WAV
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+            temp_path = f.name
+
+        with wave.open(temp_path, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            # 将 float32 转换为 int16
+            silence_int16 = (silence * 32767).astype(np.int16)
+            wf.writeframes(silence_int16.tobytes())
+
+        # 进行一次假转录来预热
+        from mlx_audio.stt.generate import generate_transcription
+        _ = generate_transcription(
+            model=model,
+            audio=temp_path,
+            output_path=tempfile.NamedTemporaryFile(suffix='.txt', delete=False).name,
+            language='Chinese',
+            verbose=False
+        )
+
+        # 清理临时文件
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+
+        print("[ASR Server] 模型预热完成")
+    except Exception as e:
+        print(f"[ASR Server] 预热失败（不影响使用）: {e}")
+
 def start_server():
     """启动 Unix Socket 服务端"""
     socket_path = CONFIG["socket_path"]
@@ -370,6 +413,10 @@ def start_server():
     print(f"[ASR Server] 当前模型: {CONFIG['model']} ({CONFIG['models'][CONFIG['model']]})")
     print(f"[ASR Server] 语言: {CONFIG['language']}")
     print(f"[ASR Server] 可用模型: {', '.join(CONFIG['models'].keys())}")
+
+    # 后台线程预热模型
+    import threading
+    threading.Thread(target=warmup_model, daemon=True).start()
 
     try:
         while True:

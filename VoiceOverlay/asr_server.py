@@ -307,7 +307,6 @@ def convert_chinese_numbers(text: str) -> str:
         return text
 
     original = text
-    cn_digits = '零〇一二三四五六七八九'
 
     def parse_number(match):
         """解析单个中文数字"""
@@ -327,38 +326,48 @@ def convert_chinese_numbers(text: str) -> str:
         return match.group()
 
     def _parse_cn(cn):
-        """解析中文数字为整数"""
+        """解析中文数字为整数（支持更复杂的数字）"""
         if not cn:
             return None
 
+        digit_map = {'零': 0, '〇': 0, '一': 1, '二': 2, '三': 3, '四': 4,
+                    '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+        unit_map = {'十': 10, '百': 100, '千': 1000, '万': 10000, '亿': 100000000}
+
         # 简单个位数
-        if len(cn) == 1 and cn in cn_digits:
-            digit_map = {'零': 0, '〇': 0, '一': 1, '二': 2, '三': 3, '四': 4,
-                        '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+        if len(cn) == 1 and cn in digit_map:
             return digit_map.get(cn)
 
-        # 处理十到九十（整十）
-        tens = {'十': 10, '二十': 20, '三十': 30, '四十': 40, '五十': 50,
-                '六十': 60, '七十': 70, '八十': 80, '九十': 90}
-        if cn in tens:
-            return tens[cn]
+        # 处理"十"开头的特殊情况（如"十二"=12，"十万"=100000）
+        if cn.startswith('十'):
+            cn = '一' + cn
 
-        # 处理十一到十九（十几）
-        if len(cn) == 2 and cn[0] in cn_digits and cn[1] == '十':
-            digit_map = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
-                        '六': 6, '七': 7, '八': 8, '九': 9}
-            d = digit_map.get(cn[0])
-            if d:
-                return 10 + d
+        total = 0
+        temp = 0
+        last_unit = 1
 
-        # 处理二十一到九十九（几十几）
-        if len(cn) == 3 and cn[1] == '十' and cn[0] in cn_digits and cn[2] in cn_digits:
-            digit_map = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
-                        '六': 6, '七': 7, '八': 8, '九': 9}
-            d1 = digit_map.get(cn[0])
-            d2 = digit_map.get(cn[2])
-            if d1 and d2:
-                return d1 * 10 + d2
+        i = 0
+        while i < len(cn):
+            char = cn[i]
+
+            if char in digit_map:
+                temp = digit_map[char]
+            elif char in unit_map:
+                unit = unit_map[char]
+                if unit > last_unit:
+                    # 遇到更大的单位（万、亿），将之前的结果乘以这个单位
+                    total = (total + temp) * unit
+                else:
+                    # 普通单位（十、百、千）
+                    total += temp * unit
+                temp = 0
+                last_unit = unit
+            i += 1
+
+        total += temp
+
+        if total > 0:
+            return total
 
         return None  # 无法解析
 
@@ -369,6 +378,83 @@ def convert_chinese_numbers(text: str) -> str:
 
     if text != original:
         print(f"[Number] '{original}' -> '{text}'")
+
+    return text
+
+
+def clean_punctuation(text: str) -> str:
+    """清理重复标点和多余符号"""
+    if not text:
+        return text
+
+    original = text
+    import re
+
+    # 1. 统一标点（中文标点优先）
+    text = text.replace('，,', '，').replace(',，', '，')
+    text = text.replace('。.', '。').replace('.。', '。')
+
+    # 2. 清理重复逗号（核心问题）
+    text = re.sub(r'，\s*，+', '，', text)
+    text = re.sub(r',\s*,+', ',', text)
+    text = re.sub(r'，\s*,', '，', text)
+    text = re.sub(r',\s*，', '，', text)
+
+    # 3. 清理重复句号
+    text = re.sub(r'。\s*。+', '。', text)
+    text = re.sub(r'\.\s*\.+', '.', text)
+
+    # 4. 清理重复问号、感叹号
+    text = re.sub(r'？\s*？+', '？', text)
+    text = re.sub(r'!\s*!+', '!', text)
+    text = re.sub(r'！\s*！+', '！', text)
+
+    # 5. 清理句首的标点
+    text = re.sub(r'^[，。！？、；：,.!?;:\s]+', '', text)
+
+    # 6. 清理句尾多余的逗号
+    text = re.sub(r'[，,\s]+$', '', text)
+
+    # 7. 清理多余空格
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+
+    if text != original:
+        print(f"[Punct] '{original}' -> '{text}'")
+
+    return text
+
+
+def polish_sentence(text: str) -> str:
+    """轻量级句子润色"""
+    if not text:
+        return text
+
+    original = text
+    import re
+
+    # 1. 修正"1些"->"一些"这类常见误转换
+    # 只有当"1"后面跟的是"些"或"下"时才还原（这些是固定词）
+    text = re.sub(r'1些', '一些', text)
+    text = re.sub(r'1下', '一下', text)
+
+    # 2. 常见口语表达修正
+    corrections = [
+        (r'那个那个', '那个'),
+        (r'这个这个', '这个'),
+        (r'然后然后', '然后'),
+        (r'就是就是', '就是'),
+        (r'好吧好吧', '好吧'),
+    ]
+
+    for pattern, repl in corrections:
+        text = re.sub(pattern, repl, text)
+
+    # 3. 数字后面的单位整理（如"1个"保持不变，"1 个"合并）
+    text = re.sub(r'(\d)\s+(个|只|条|张|本|页|行|列|米|厘米|公里|千克|克)', r'\1\2', text)
+
+    if text != original:
+        print(f"[Polish] '{original}' -> '{text}'")
 
     return text
 
@@ -420,14 +506,21 @@ def transcribe_audio(audio_path: str) -> dict:
 
         text = result.text.strip() if hasattr(result, 'text') else str(result).strip()
 
-        # 音近词纠正（处理常见误识别）
+        # 后处理流水线
+        # 1. 音近词纠正（处理常见误识别）
         text = apply_phonetic_corrections(text)
 
-        # 语气词过滤
+        # 2. 语气词过滤
         text = remove_filler_words(text)
 
-        # 中文数字转阿拉伯数字
+        # 3. 中文数字转阿拉伯数字
         text = convert_chinese_numbers(text)
+
+        # 4. 句子润色（处理重复词等）
+        text = polish_sentence(text)
+
+        # 5. 标点清理（处理重复逗号等核心问题）
+        text = clean_punctuation(text)
 
         return {"success": True, "text": text}
 

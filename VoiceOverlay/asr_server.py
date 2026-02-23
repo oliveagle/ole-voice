@@ -22,8 +22,64 @@ CONFIG = {
     "models": {
         "0.6B": "mlx-community/Qwen3-ASR-0.6B-8bit",
         "1.7B": "mlx-community/Qwen3-ASR-1.7B-8bit"
+    },
+    # LLM 重写模型（本地 MLX）
+    "llm_model": "/Users/oliveagle/.cache/modelscope/hub/models/Qwen/Qwen3-0___6B-MLX-4bit",
+    # 文本后处理配置（默认全部关闭）
+    "text_processing": {
+        "enable_phonetic_correction": False,
+        "enable_filler_word_removal": False,
+        "enable_number_conversion": False,
+        "enable_sentence_polishing": False,
+        "enable_punctuation_cleanup": True,
+        "enable_llm_rewrite": False,
     }
 }
+
+
+def load_config():
+    """从 YAML 文件加载配置"""
+    import yaml
+
+    # 查找配置文件
+    config_paths = [
+        Path(__file__).parent.parent / "config.yaml",
+        Path(__file__).parent / "config.yaml",
+    ]
+
+    config_file = None
+    for path in config_paths:
+        if path.exists():
+            config_file = path
+            break
+
+    if config_file is None:
+        print("[Config] 未找到配置文件，使用默认配置")
+        return
+
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            yaml_config = yaml.safe_load(f)
+
+        # 合并配置
+        if yaml_config:
+            if 'asr' in yaml_config:
+                for key in ['model', 'language']:
+                    if key in yaml_config['asr']:
+                        CONFIG[key] = yaml_config['asr'][key]
+                if 'models' in yaml_config['asr']:
+                    CONFIG['models'] = yaml_config['asr']['models']
+
+            if 'text_processing' in yaml_config:
+                CONFIG['text_processing'].update(yaml_config['text_processing'])
+
+            print(f"[Config] 已加载配置文件: {config_file}")
+    except Exception as e:
+        print(f"[Config] 加载配置文件失败: {e}")
+
+
+# 启动时加载配置
+load_config()
 
 # 当前加载的模型缓存
 _current_model = None
@@ -458,6 +514,79 @@ def polish_sentence(text: str) -> str:
 
     return text
 
+
+# LLM 模型缓存
+_llm_model_cache = None
+_llm_tokenizer_cache = None
+
+
+def llm_rewrite(text: str) -> str:
+    """使用本地 LLM 重写/润色文本"""
+    global _llm_model_cache, _llm_tokenizer_cache
+
+    if not text:
+        return text
+
+    tp = CONFIG.get('text_processing', {})
+    if not tp.get('enable_llm_rewrite', False):
+        return text
+
+    # 获取本地模型路径
+    model_path = CONFIG.get('llm_model', '')
+    if not model_path:
+        print("[LLM] 未配置本地模型路径")
+        return text
+
+    # 首次加载模型
+    if _llm_model_cache is None:
+        try:
+            from mlx_lm import load as load_mlx_model
+            print(f"[LLM] 加载本地模型: {model_path}")
+            _llm_model_cache, _llm_tokenizer_cache = load_mlx_model(model_path)
+            print("[LLM] 模型加载完成")
+        except Exception as e:
+            print(f"[LLM] 模型加载失败: {e}")
+            return text
+
+    # 构建提示词 (Qwen3 聊天模板)
+    system_prompt = "你是一个专业的文本润色助手。请将用户输入的文本润色得更通顺自然，保持原意，修正明显的识别错误。如果原文已经通顺，直接返回原文。不要添加任何解释或前缀。"
+    user_prompt = f"原始文本：{text}\n\n润色后："
+
+    try:
+        from mlx_lm import generate
+        from mlx_lm.sample_utils import make_sampler
+
+        # 使用较低的 temperature 以获得更稳定的输出
+        sampler = make_sampler(tempature=0.3)
+
+        # 生成回复
+        response = generate(
+            _llm_model_cache,
+            _llm_tokenizer_cache,
+            prompt=f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{user_prompt}<|im_end|>\n<|im_start|>assistant\n",
+            sampler=sampler,
+            max_tokens=500
+        )
+
+        # 提取 assistant 的回复（去掉 prompt 部分）
+        rewritten = response.strip()
+
+        # 简单处理：如果包含 im_end 标记则截断
+        if '<|im_end|>' in rewritten:
+            rewritten = rewritten.split('<|im_end|>')[0].strip()
+
+        if rewritten and rewritten != text:
+            print(f"[LLM] '{text}' -> '{rewritten}'")
+
+        return rewritten if rewritten else text
+
+    except Exception as e:
+        print(f"[LLM] 重写失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return text
+
+
 def transcribe_audio(audio_path: str) -> dict:
     """使用 MLX Audio 转录音频"""
     try:
@@ -506,21 +635,33 @@ def transcribe_audio(audio_path: str) -> dict:
 
         text = result.text.strip() if hasattr(result, 'text') else str(result).strip()
 
-        # 后处理流水线
-        # 1. 音近词纠正（处理常见误识别）
-        text = apply_phonetic_corrections(text)
+        # 获取文本处理配置
+        tp = CONFIG.get('text_processing', {})
+
+        # 后处理流水线（根据配置开关）
+        # 1. 音近词纠正
+        if tp.get('enable_phonetic_correction', False):
+            text = apply_phonetic_corrections(text)
 
         # 2. 语气词过滤
-        text = remove_filler_words(text)
+        if tp.get('enable_filler_word_removal', False):
+            text = remove_filler_words(text)
 
         # 3. 中文数字转阿拉伯数字
-        text = convert_chinese_numbers(text)
+        if tp.get('enable_number_conversion', False):
+            text = convert_chinese_numbers(text)
 
-        # 4. 句子润色（处理重复词等）
-        text = polish_sentence(text)
+        # 4. 句子润色
+        if tp.get('enable_sentence_polishing', False):
+            text = polish_sentence(text)
 
-        # 5. 标点清理（处理重复逗号等核心问题）
-        text = clean_punctuation(text)
+        # 5. 标点清理（默认开启）
+        if tp.get('enable_punctuation_cleanup', True):
+            text = clean_punctuation(text)
+
+        # 6. LLM 重写（可选）
+        if tp.get('enable_llm_rewrite', False):
+            text = llm_rewrite(text)
 
         return {"success": True, "text": text}
 

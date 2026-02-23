@@ -26,3 +26,15 @@ advanced:
   vad_threshold: 0.5
   silence_timeout: 0
   max_duration: 60
+
+# 文本后处理配置
+text_processing:
+  # 脚本化修正（可开关）
+  enable_phonetic_correction: false    # 音近词纠正
+  enable_filler_word_removal: false    # 语气词过滤
+  enable_number_conversion: false      # 中文数字转阿拉伯数字
+  enable_sentence_polishing: false     # 句子润色
+  enable_punctuation_cleanup: false    # 标点清理（已关闭）
+
+  # LLM 重写（本地模型）
+  enable_llm_rewrite: true             # LLM 重写开关（已开启）

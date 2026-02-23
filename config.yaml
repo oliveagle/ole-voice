@@ -1,7 +1,7 @@
 hotkey: cmd_l
 
 asr:
-  model: "1.7B"
+  model: "0.6B"
   language: zh
   models:
     0.6B: mlx-community/Qwen3-ASR-0.6B-8bit

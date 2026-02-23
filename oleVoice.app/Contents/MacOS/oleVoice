@@ -2,7 +2,6 @@
 # oleVoice 单实例启动器
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RESOURCES_DIR="$APP_DIR/Resources"
 PID_FILE="/tmp/olevoice.pid"
 
 # 检查是否已有实例在运行
@@ -20,54 +19,16 @@ check_running() {
     return 1
 }
 
-# 清理旧进程
-cleanup() {
-    # 杀掉所有旧的 VoiceInputSwift 进程
-    ps aux | grep "VoiceInputSwift" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
-    ps aux | grep "oleVoice" | grep -v grep | grep -v "$$" | awk '{print $2}' | xargs kill -9 2>/dev/null
-    sleep 1
-}
-
-# 启动 ASR 服务端 (如果未运行)
-start_asr() {
-    if ! pgrep -f "asr_server.py" > /dev/null; then
-        echo "启动 ASR 服务端..."
-        cd "$RESOURCES_DIR"
-        rm -f /tmp/voice_asr_socket
-        # 使用 venv 中的 Python
-        if [ -f "$HOME/ole/repos/github.com/oliveagle/ole_asr/venv/bin/python3" ]; then
-            "$HOME/ole/repos/github.com/oliveagle/ole_asr/venv/bin/python3" asr_server.py > /tmp/asr_server.log 2>&1 &
-        else
-            python3 asr_server.py > /tmp/asr_server.log 2>&1 &
-        fi
-        # 等待 socket 创建，最多等待 10 秒
-        local count=0
-        while [ ! -S /tmp/voice_asr_socket ] && [ $count -lt 10 ]; do
-            sleep 1
-            count=$((count + 1))
-        done
-        if [ -S /tmp/voice_asr_socket ]; then
-            echo "ASR 服务端已就绪"
-        else
-            echo "警告: ASR 服务端启动超时"
-        fi
-    else
-        echo "ASR 服务端已在运行"
-    fi
-}
-
 # 主逻辑
 if check_running; then
     osascript -e 'display notification "oleVoice 已经在运行" with title "oleVoice"'
     exit 0
 fi
 
-echo "启动 oleVoice..."
-cleanup
-start_asr
+# 清理旧PID文件
+rm -f "$PID_FILE"
 
-# 启动 Swift 主程序
-echo "启动主程序..."
+# 启动 Swift 主程序 (Swift内部会管理ASR服务)
 "$APP_DIR/MacOS/VoiceInputSwift" &
 SWIFT_PID=$!
 echo $SWIFT_PID > "$PID_FILE"

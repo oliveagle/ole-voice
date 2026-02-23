@@ -241,6 +241,137 @@ def apply_phonetic_corrections(text: str) -> str:
 
     return corrected
 
+
+# 语气词/填充词列表
+FILLER_WORDS = [
+    # 单字语气词
+    "啊", "嗯", "哦", "呀", "哇", "哈", "嘿", "嗯呐",
+    # 双字语气词
+    "这个", "那个", "就是", "其实", "可能", "大概", "好像", "或许",
+    "然后", "那么", "这样", "那样", "什么", "怎么", "为什么",
+    "对了", "好吧", "好吧", "嗯嗯", "啊啊", "哦哦",
+    # 三字及以上
+    "也就是说", "话句话说", "其实呢", "这个那个",
+    # 重复类
+    "呃呃", "呃", "哇塞", "我去", "我靠", "我擦",
+    # 结尾语气词
+    "啦", "呀", "哦", "吧", "呢", "吗", "啊", "哈",
+    # 英文填充词
+    "um", "uh", "er", "like", "you know", "basically", "actually",
+    "literally", "so yeah", "you see",
+]
+
+def remove_filler_words(text: str) -> str:
+    """移除语气词/填充词"""
+    if not text:
+        return text
+
+    original = text
+    import re
+
+    # 定义标点符号边界
+    puncts = '，。！？、；：""''（）【】,.!?;:\'"()[]'
+
+    # 按长度降序排列语气词
+    words = sorted(set(FILLER_WORDS), key=len, reverse=True)
+
+    # 多次迭代直到没有变化
+    for _ in range(3):
+        changed = False
+        for word in words:
+            # 匹配独立语气词：前后有边界（标点/空格/字符串边界）
+            pattern = rf'(^|\s|[{re.escape(puncts)}]){re.escape(word)}($|\s|[{re.escape(puncts)}])'
+            new_text = re.sub(pattern, r'\1\2', text)
+            if new_text != text:
+                changed = True
+                text = new_text
+
+        if not changed:
+            break
+
+    # 清理多余空白
+    text = re.sub(r'\s+', ' ', text)
+
+    # 清理开头结尾的标点和空格
+    text = text.strip(f' {puncts}')
+
+    if text != original:
+        print(f"[Filler] '{original}' -> '{text}'")
+
+    return text
+
+
+def convert_chinese_numbers(text: str) -> str:
+    """将文本中的中文数字转换为阿拉伯数字"""
+    if not text:
+        return text
+
+    original = text
+    cn_digits = '零〇一二三四五六七八九'
+
+    def parse_number(match):
+        """解析单个中文数字"""
+        cn = match.group()
+        if not cn:
+            return cn
+
+        # 移除"第"前缀
+        is_ordinal = cn.startswith('第')
+        if is_ordinal:
+            cn = cn[1:]
+
+        # 解析数字
+        result = _parse_cn(cn)
+        if result is not None:
+            return ('第' if is_ordinal else '') + str(result)
+        return match.group()
+
+    def _parse_cn(cn):
+        """解析中文数字为整数"""
+        if not cn:
+            return None
+
+        # 简单个位数
+        if len(cn) == 1 and cn in cn_digits:
+            digit_map = {'零': 0, '〇': 0, '一': 1, '二': 2, '三': 3, '四': 4,
+                        '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+            return digit_map.get(cn)
+
+        # 处理十到九十（整十）
+        tens = {'十': 10, '二十': 20, '三十': 30, '四十': 40, '五十': 50,
+                '六十': 60, '七十': 70, '八十': 80, '九十': 90}
+        if cn in tens:
+            return tens[cn]
+
+        # 处理十一到十九（十几）
+        if len(cn) == 2 and cn[0] in cn_digits and cn[1] == '十':
+            digit_map = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+                        '六': 6, '七': 7, '八': 8, '九': 9}
+            d = digit_map.get(cn[0])
+            if d:
+                return 10 + d
+
+        # 处理二十一到九十九（几十几）
+        if len(cn) == 3 and cn[1] == '十' and cn[0] in cn_digits and cn[2] in cn_digits:
+            digit_map = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+                        '六': 6, '七': 7, '八': 8, '九': 9}
+            d1 = digit_map.get(cn[0])
+            d2 = digit_map.get(cn[2])
+            if d1 and d2:
+                return d1 * 10 + d2
+
+        return None  # 无法解析
+
+    # 匹配中文数字序列（包括第X个这种情况）
+    import re
+    pattern = r'第?[零〇一二三四五六七八九十百千万亿]+'
+    text = re.sub(pattern, parse_number, text)
+
+    if text != original:
+        print(f"[Number] '{original}' -> '{text}'")
+
+    return text
+
 def transcribe_audio(audio_path: str) -> dict:
     """使用 MLX Audio 转录音频"""
     try:
@@ -291,6 +422,12 @@ def transcribe_audio(audio_path: str) -> dict:
 
         # 音近词纠正（处理常见误识别）
         text = apply_phonetic_corrections(text)
+
+        # 语气词过滤
+        text = remove_filler_words(text)
+
+        # 中文数字转阿拉伯数字
+        text = convert_chinese_numbers(text)
 
         return {"success": True, "text": text}
 

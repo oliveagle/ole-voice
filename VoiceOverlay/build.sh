@@ -5,8 +5,8 @@ cd "$(dirname "$0")"
 
 echo "编译 VoiceOverlay..."
 
-# 编译 Swift 程序
-swiftc -O main.swift -o VoiceOverlay \
+# 编译 Swift 程序 (输出到 /tmp 避免覆盖本目录)
+swiftc -O main.swift -o /tmp/VoiceOverlayRun \
     -framework Cocoa \
     -framework Carbon \
     -framework AVFoundation \
@@ -14,7 +14,7 @@ swiftc -O main.swift -o VoiceOverlay \
 
 if [ $? -eq 0 ]; then
     echo "✓ 编译成功"
-    echo "运行: ./VoiceOverlay"
+    echo "输出: /tmp/VoiceOverlayRun"
 else
     echo "✗ 编译失败"
 fi

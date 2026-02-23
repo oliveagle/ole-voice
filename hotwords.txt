@@ -47,6 +47,9 @@ tokenizer
 知识蒸馏
 
 # 编程/开发相关
+CLAUDE.md
+claude.md
+Claude.md
 Python
 JavaScript
 TypeScript

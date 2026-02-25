@@ -456,6 +456,84 @@ class ASRClient {
         }
     }
 
+    // Ping 后端模型 - 发送静音音频保持模型活跃
+    func ping() -> Bool {
+        DispatchQueue.global(qos: .utility).sync {
+            do {
+                let socket = try self.createSocket()
+                defer { socket.close() }
+
+                // 创建 0.1 秒的静音音频 (16kHz, 16bit, 单声道)
+                let sampleCount = 1600 // 0.1 秒 * 16000 Hz
+                var silenceData = Data(count: sampleCount * 2) // 16bit = 2 bytes per sample
+                silenceData.withUnsafeMutableBytes { ptr in
+                    if let baseAddr = ptr.baseAddress {
+                        memset(baseAddr, 0, sampleCount * 2)
+                    }
+                }
+
+                // 创建 WAV 头
+                let wavData = createWAVData(pcmData: silenceData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+
+                // 发送数据
+                var length = UInt32(wavData.count).bigEndian
+                _ = withUnsafeBytes(of: &length) { socket.write(Data($0)) }
+                _ = socket.write(wavData)
+
+                // 接收结果
+                var resultLengthBuffer = Data(repeating: 0, count: 4)
+                let readLen = socket.read(into: &resultLengthBuffer)
+                if readLen > 0 {
+                    let resultLength = resultLengthBuffer.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+
+                    var resultBuffer = Data(repeating: 0, count: Int(resultLength))
+                    _ = socket.read(into: &resultBuffer)
+
+                    if let json = try? JSONSerialization.jsonObject(with: resultBuffer) as? [String: Any],
+                       let success = json["success"] as? Bool, success {
+                        print("[ASR Ping] 模型保持活跃 ✓")
+                        return true
+                    }
+                }
+                return false
+            } catch {
+                print("[ASR Ping] 连接失败: \(error)")
+                return false
+            }
+        }
+    }
+
+    private func createWAVData(pcmData: Data, sampleRate: UInt32, channels: UInt16, bitsPerSample: UInt16) -> Data {
+        let byteRate = sampleRate * UInt32(channels) * UInt32(bitsPerSample) / 8
+        let blockAlign = channels * bitsPerSample / 8
+        let dataSize = UInt32(pcmData.count)
+        let fileSize = 36 + dataSize
+
+        var wavData = Data()
+
+        // RIFF chunk
+        wavData.append("RIFF".data(using: .ascii)!)
+        wavData.append(fileSize.littleEndianBytes)
+        wavData.append("WAVE".data(using: .ascii)!)
+
+        // fmt subchunk
+        wavData.append("fmt ".data(using: .ascii)!)
+        wavData.append(UInt32(16).littleEndianBytes)
+        wavData.append(UInt16(1).littleEndianBytes)
+        wavData.append(channels.littleEndianBytes)
+        wavData.append(sampleRate.littleEndianBytes)
+        wavData.append(byteRate.littleEndianBytes)
+        wavData.append(blockAlign.littleEndianBytes)
+        wavData.append(bitsPerSample.littleEndianBytes)
+
+        // data subchunk
+        wavData.append("data".data(using: .ascii)!)
+        wavData.append(dataSize.littleEndianBytes)
+        wavData.append(pcmData)
+
+        return wavData
+    }
+
     private func createSocket() throws -> Socket {
         let socket = try Socket.create(family: .unix, type: .stream, protocol: .unix)
         try socket.connect(to: socketPath)
@@ -950,8 +1028,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func startASRMonitor() {
-        asrMonitorTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        // 模型活跃性检查定时器 - 每 5 分钟 ping 一次
+        asrMonitorTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: true) { [weak self] _ in
+            self?.pingASRModel()
+        }
+
+        // ASR 服务健康检查定时器 - 每 10 秒检查一次
+        Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.checkAndRestartASR()
+        }
+    }
+
+    func pingASRModel() {
+        // 定期 ping 后端模型，保持模型活跃
+        print("[ASR Monitor] 定时 ping 保持模型活跃...")
+        if ASRClient.shared.ping() {
+            print("[ASR Monitor] 模型响应正常")
+        } else {
+            print("[ASR Monitor] 模型无响应，可能需要重启")
         }
     }
 

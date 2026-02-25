@@ -84,7 +84,20 @@ swiftc -O main.swift -o VoiceOverlay \
     -framework AVFoundation \
     -framework CoreVideo 2>&1
 
-echo "✅ 编译完成"
+if [ $? -eq 0 ]; then
+    echo "✅ 编译完成"
+else
+    echo "❌ 编译失败"
+    exit 1
+fi
+
+# 也编译到 oleVoice.app 内
+if [ -d "oleVoice.app/Contents/MacOS" ]; then
+    echo ""
+    echo "📦 更新 oleVoice.app..."
+    cp VoiceOverlay oleVoice.app/Contents/MacOS/VoiceInputSwift
+    echo "✅ 应用包已更新"
+fi
 
 # 设置权限
 echo ""
